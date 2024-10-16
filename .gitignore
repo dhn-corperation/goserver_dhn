@@ -1,0 +1,15 @@
+/pkg
+/bin
+/src/github.com
+/src/golang.org
+/src/google.golang.org
+/src/gopkg.in
+/src/DHNServer/log
+/src/DHNServer/upload
+/src/DHNServer/*.ini
+/src/DHNServer/DHNCenter
+/src/DHNServer/DHNServer
+/logs
+/test
+DHNCenter2
+DHNServer2
