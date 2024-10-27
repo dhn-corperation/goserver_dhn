@@ -5,25 +5,20 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	kakao "mycs/src/kakaojson"
-	config "mycs/src/kaoconfig"
-	databasepool "mycs/src/kaodatabasepool"
-
-	//"io/ioutil"
-	//"net"
-	//"net/http"
+	"context"
 	s "strings"
-
 	"strconv"
 	"sync"
 	"time"
-	//"github.com/go-resty/resty"
+
+	kakao "mycs/src/kakaojson"
+	config "mycs/src/kaoconfig"
+	databasepool "mycs/src/kaodatabasepool"
 )
 
 var ftprocCnt int
 var FisRunning bool
 var isStoping bool
-//var limitcnt int = config.Conf.SENDLIMIT
 
 type resultStr struct {
 	Statuscode int
@@ -31,40 +26,63 @@ type resultStr struct {
 	Result     map[string]string
 }
 
-func FriendtalkProc() {
+func FriendtalkProc(user_id string, ctx context.Context) {
 	ftprocCnt = 1
-	
+	config.Stdlog.Println(user_id, " - 친구톡 프로세스 시작 됨 ")
+
 	for {
-		if ftprocCnt <=5 {
-			var startNow = time.Now()
-			var group_no = fmt.Sprintf("%02d%02d%02d%09d", startNow.Hour(), startNow.Minute(), startNow.Second(), startNow.Nanosecond())
+		if ftprocCnt <=10 {
+		
+			select {
+				case <- ctx.Done():
+			
+			    config.Stdlog.Println(user_id+" - Friendtalk process가 10초 후에 종료 됨.")
+			    time.Sleep(10 * time.Second)
+			    config.Stdlog.Println(user_id+" - Friendtalk process 종료 완료")
+			    return
+			default:
+						
+				var count int
 	
-			updateRows, err := databasepool.DB.Exec("update DHN_REQUEST set send_group = '" + group_no + "' where send_group is null limit " + strconv.Itoa(config.Conf.SENDLIMIT))
+				cnterr := databasepool.DB.QueryRowContext(ctx, "select count(1) as cnt from DHN_REQUEST  where send_group is null and userid = ? limit 1", user_id).Scan(&count)
 	
-			if err != nil {
-				config.Stdlog.Println("Request Table - send_group Update 오류")
-			}
+				if cnterr != nil {
+					time.Sleep(10 * time.Second)
+					//config.Stdlog.Println("DHN_REQUEST Table - select 오류 : " + cnterr.Error())
+				} else {
 	
-			rowcnt, _ := updateRows.RowsAffected()
-	
-			if rowcnt > 0 {
-				config.Stdlog.Println("친구톡 발송 처리 시작 ( ", group_no, " ) : ", rowcnt, " 건 ")
-				ftprocCnt ++
-				go ftsendProcess(group_no)
+					if count > 0 {
+						var startNow = time.Now()
+						var group_no = fmt.Sprintf("%02d%02d%02d%09d", startNow.Hour(), startNow.Minute(), startNow.Second(), startNow.Nanosecond())
+				
+						updateRows, err := databasepool.DB.ExecContext(ctx, "update DHN_REQUEST set send_group = ? where send_group is null and userid = ? limit ?", group_no, user_id, strconv.Itoa(config.Conf.SENDLIMIT))
+				
+						if err != nil {
+							config.Stdlog.Println(user_id, " Request Table - send_group Update 오류")
+						}
+				
+						rowcnt, _ := updateRows.RowsAffected()
+				
+						if rowcnt > 0 {
+							config.Stdlog.Println(user_id, " 친구톡 발송 처리 시작 ( ", group_no, " ) : ", rowcnt, " 건 ")
+							ftprocCnt ++
+							go ftsendProcess(group_no, user_id)
+						}
+					}
+				}
 			}
 		}
 	}
-
 }
 
-func ftsendProcess(group_no string) {
+func ftsendProcess(group_no, user_id string) {
 
 	var db = databasepool.DB
 	var conf = config.Conf
 	var stdlog = config.Stdlog
 	var errlog = config.Stdlog
 
-	reqsql := "select * from DHN_REQUEST where send_group = '" + group_no + "' and message_type like 'f%' "
+	reqsql := "select * from DHN_REQUEST where send_group = '" + group_no + "' and message_type like 'f%' and userid ='" + user_id + "'"
 
 	reqrows, err := db.Query(reqsql)
 	if err != nil {
@@ -437,10 +455,12 @@ carousel
 		resinsValues = nil
 	}
 
-	db.Exec("delete from DHN_REQUEST where send_group = '" + group_no + "'")
+	db.Exec("delete from DHN_REQUEST where send_group = '" + group_no + "' and userid = '" + user_id + "'")
+
+	ftprocCnt--
+
 	stdlog.Println("친구톡 발송 처리 완료 ( ", group_no, " ) : ", procCount, " 건  ( Proc Cnt :", ftprocCnt, ")" )
 	
-	ftprocCnt--
 
 }
 

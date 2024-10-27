@@ -6,27 +6,22 @@ import (
 	"os/signal"
 	"syscall"
 
-	_ "github.com/go-sql-driver/mysql"
-
 	config "mycs/src/kaoconfig"
 	databasepool "mycs/src/kaodatabasepool"
 	"mycs/src/kaoreqreceive"
-
 	"mycs/src/kaocenter"
-	//"kaosendrequest"
-	//"strconv"
-	//"time"
-	//
+
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/gin-gonic/gin"
 	"github.com/takama/daemon"
 )
 
 const (
-	name        = "DHNCenter"
+	name        = "DHNCenter_dhn"
 	description = "대형네트웍스 카카오 Center API"
 )
 
-var dependencies = []string{"DHNCenter.service"}
+var dependencies = []string{name+".service"}
 
 var resultTable string
 
@@ -36,7 +31,7 @@ type Service struct {
 
 func (service *Service) Manage() (string, error) {
 
-	usage := "Usage: DHNCenter install | remove | start | stop | status"
+	usage := "Usage: "+name+" install | remove | start | stop | status"
 
 	if len(os.Args) > 1 {
 		command := os.Args[1]
@@ -55,7 +50,9 @@ func (service *Service) Manage() (string, error) {
 			return usage, nil
 		}
 	}
+	config.Stdlog.Println(name+" resultProc() 실행 시작 -----------------------------")
 	resultProc()
+	config.Stdlog.Println(name+" resultProc() 실행 끝 -----------------------------")
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, os.Kill, syscall.SIGTERM)
 
@@ -94,22 +91,12 @@ func main() {
 }
 
 func resultProc() {
-	config.Stdlog.Println("DHN Center API 시작")
-
-    // 알림톡 / 친구톡 동시 호출 시 http client 호출 오류가 발생하여
-    // AlimtalkProc 에서 순차적으로 알림톡 / 친구톡 호출 하도록 수정 함.
-	//go kaosendrequest.AlimtalkProc()
-
-	//go kaosendrequest.FriendtalkProc()
-
-	//go kaosendrequest.PollingProc()
+	config.Stdlog.Println(name+" 시작")
 
 	r := gin.New()
 	r.Use(gin.Recovery())
-	//r := gin.Default()
 
 	r.GET("/", func(c *gin.Context) {
-		//time.Sleep(30 * time.Second)
 		c.String(200, "Center Server : "+config.Conf.CENTER_SERVER + ",   " + "Image Server : "+config.Conf.IMAGE_SERVER)
 	})
  
@@ -210,4 +197,6 @@ func resultProc() {
     r.POST("/ft/carousel", kaocenter.Image_carousel)
 
 	r.Run(":" + config.Conf.PORT)
+
+	config.Stdlog.Println(name+" 실행 포트 : ", config.Conf.PORT)
 }

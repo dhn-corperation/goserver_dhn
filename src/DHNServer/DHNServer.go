@@ -5,30 +5,25 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-
-	_ "github.com/go-sql-driver/mysql"
+	"database/sql"
+	"context"
+	"sort"
 
 	config "mycs/src/kaoconfig"
 	databasepool "mycs/src/kaodatabasepool"
-
-	//"kaoreqreceive"
-
-	//"kaocenter"
 	"mycs/src/kaosendrequest"
-	"mycs/src/oshotproc"
-	//"strconv"
-	//"time"
-	s "strings"
-	//"github.com/gin-gonic/gin"
+	
 	"github.com/takama/daemon"
+	"github.com/gin-gonic/gin"
+	_ "github.com/go-sql-driver/mysql"
 )
 
 const (
-	name        = "DHNServer"
+	name        = "DHNServer_dhn"
 	description = "대형네트웍스 카카오 발송 서버"
 )
 
-var dependencies = []string{"DHNServer.service"}
+var dependencies = []string{name+".service"}
 
 var resultTable string
 
@@ -38,7 +33,7 @@ type Service struct {
 
 func (service *Service) Manage() (string, error) {
 
-	usage := "Usage: DHNServer install | remove | start | stop | status"
+	usage := "Usage: "+name+" install | remove | start | stop | status"
 
 	if len(os.Args) > 1 {
 		command := os.Args[1]
@@ -57,7 +52,9 @@ func (service *Service) Manage() (string, error) {
 			return usage, nil
 		}
 	}
+	config.Stdlog.Println(name+" resultProc() 실행 시작 -----------------------------")
 	resultProc()
+	config.Stdlog.Println(name+" resultProc() 실행 끝 -----------------------------")
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, os.Kill, syscall.SIGTERM)
 
@@ -115,118 +112,221 @@ func main() {
 }
 
 func resultProc() {
-	config.Stdlog.Println("DHN Server 시작")
+	config.Stdlog.Println(name+" 시작")
 
-	go kaosendrequest.AlimtalkProc()
+	//모든 서비스
+	allService := map[string]string{}
+	allCtxC := map[string]interface{}{}
 
-	go kaosendrequest.FriendtalkProc()
+	alim_user_list, error := databasepool.DB.Query("select distinct user_id from DHN_CLIENT_LIST where use_flag = 'Y' and alimtalk='Y'")
 
-	if  s.EqualFold(config.Conf.RESPONSE_METHOD, "polling") {
-		go kaosendrequest.PollingProc()
+	isAlim := true
+	if error != nil {
+		config.Stdlog.Println("알림톡 유저 select 오류 ")
+		isAlim = false
+	}
+	defer alim_user_list.Close()
+
+	alimUser := map[string]string{}
+	alimCtxC := map[string]interface{}{}
+
+	if isAlim {
+		var user_id sql.NullString
+		for alim_user_list.Next() {
+
+			alim_user_list.Scan(&user_id)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			go kaosendrequest.AlimtalkProc(user_id.String, ctx)
+
+			alimCtxC[user_id.String] = cancel
+			alimUser[user_id.String] = user_id.String
+
+			allCtxC["AL"+user_id.String] = cancel
+			allService["AL"+user_id.String] = user_id.String
+
+		}
 	}
 
-	go kaosendrequest.ResultProc()
-	
-	if s.EqualFold(config.Conf.PHONE_MSG_FLAG, "YES") {
-		go oshotproc.OshotProcess()
-	
-		go oshotproc.LMSProcess()
-		
-		go oshotproc.SMSProcess()
+	friend_user_list, error := databasepool.DB.Query("select distinct user_id from DHN_CLIENT_LIST where use_flag = 'Y' and friendtalk='Y'")
+	isFriend := true
+	if error != nil {
+		config.Stdlog.Println("알림톡 유저 select 오류 ")
+		isFriend = false
 	}
-	/*
-		r := gin.New()
-		r.Use(gin.Recovery())
-		//r := gin.Default()
+	defer friend_user_list.Close()
 
-		r.GET("/", func(c *gin.Context) {
-			c.String(200, "Server : "+config.Conf.CENTER_SERVER)
-		})
+	friendUser := map[string]string{}
+	friendCtxC := map[string]interface{}{}
 
-		r.POST("/req", kaoreqreceive.ReqReceive)
+	if isFriend {
+		var user_id sql.NullString
+		for friend_user_list.Next() {
 
-		r.POST("/result", kaoreqreceive.Resultreq)
+			friend_user_list.Scan(&user_id)
 
-		r.GET("/sender/token", kaocenter.Sender_token)
+			ctx, cancel := context.WithCancel(context.Background())
+			go kaosendrequest.FriendtalkProc(user_id.String, ctx)
 
-		r.GET("/category/all", kaocenter.Category_all)
+			friendCtxC[user_id.String] = cancel
+			friendUser[user_id.String] = user_id.String
 
-		r.GET("/sender/category", kaocenter.Category_)
+			allCtxC["FR"+user_id.String] = cancel
+			allService["FR"+user_id.String] = user_id.String
 
-		r.POST("/sender/create", kaocenter.Sender_Create)
+		} 
+	}
+	
+	r := gin.New()
+	r.Use(gin.Recovery())
+	
+	serCmd := `DHN Server API
+Command :
+/astop?uid=dhn   	 	-> 알림톡 process stop.
+/arun?uid=dhn    	 	-> 알림톡 process run.
+/alist           	 	-> 실행 중인 알림톡 process User List.
 
-		r.GET("/sender", kaocenter.Sender_)
+/fstop?uid=dhn   	 	-> 친구톡 process stop.
+/frun?uid=dhn    	 	-> 친구톡 process run.
+/flist           	 	-> 실행 중인 친구톡 process User List.
 
-		r.POST("/sender/delete", kaocenter.Sender_Delete)
+/all             	 	-> DHNServer process list
+/allstop         	 	-> DHNServer process stop
+`
 
-		r.POST("/sender/recover", kaocenter.Sender_Recover)
+	r.GET("/", func(c *gin.Context) {
+		c.String(200, serCmd)
+	})
 
-		r.POST("/template/create", kaocenter.Template_Create)
+	r.GET("/astop", func(c *gin.Context) {
+		var uid string
+		uid = c.Query("uid")
+		temp := alimCtxC[uid]
+		if temp != nil {
+			cancel := alimCtxC[uid].(context.CancelFunc)
+			cancel()
+			delete(alimCtxC, uid)
+			delete(alimUser, uid)
 
-		r.POST("/template/create_with_image", kaocenter.Template_Create_Image)
+			delete(allService, "AL"+uid)
+			delete(allCtxC, "AL"+uid)
 
-		r.GET("/template", kaocenter.Template_)
+			c.String(200, uid+" 종료 신호 전달 완료")
+		} else {
+			c.String(200, uid+"는 실행 중이지 않습니다.")
+		}
 
-		r.POST("/template/request", kaocenter.Template_Request)
+	})
 
-		r.POST("/template/cancel_request", kaocenter.Template_Cancel_Request)
+	r.GET("/arun", func(c *gin.Context) {
+		var uid string
+		uid = c.Query("uid")
+		temp := alimCtxC[uid]
+		if temp != nil {
+			c.String(200, uid+"이미 실행 중입니다.")
+		} else {
 
-		r.POST("/template/update", kaocenter.Template_Update)
+			ctx, cancel := context.WithCancel(context.Background())
+			ctx = context.WithValue(ctx, "user_id", uid)
+			go kaosendrequest.AlimtalkProc(uid, ctx)
 
-		r.POST("/template/update_with_image", kaocenter.Template_Update_Image)
+			alimCtxC[uid] = cancel
+			alimUser[uid] = uid
 
-		r.POST("/template/stop", kaocenter.Template_Stop)
+			allCtxC["AL"+uid] = cancel
+			allService["AL"+uid] = uid
 
-		r.POST("/template/reuse", kaocenter.Template_Reuse)
+			c.String(200, uid+" 시작 신호 전달 완료")
+		}
+	})
 
-		r.POST("/template/delete", kaocenter.Template_Delete)
+	r.GET("/alist", func(c *gin.Context) {
+		var key string
+		for k := range alimUser {
+			key = key + k + "\n"
+		}
+		c.String(200, key)
+	})
 
-		r.GET("/template/last_modified", kaocenter.Template_Last_Modified)
+	r.GET("/fstop", func(c *gin.Context) {
+		var uid string
+		uid = c.Query("uid")
+		temp := friendCtxC[uid]
+		if temp != nil {
+			cancel := friendCtxC[uid].(context.CancelFunc)
+			cancel()
+			delete(friendCtxC, uid)
+			delete(friendUser, uid)
 
-		r.POST("/template/comment", kaocenter.Template_Comment)
+			delete(allService, "FR"+uid)
+			delete(allCtxC, "FR"+uid)
 
-		r.POST("/template/comment_file", kaocenter.Template_Comment_File)
+			c.String(200, uid+" 종료 신호 전달 완료")
+		} else {
+			c.String(200, uid+"는 실행 중이지 않습니다.")
+		}
 
-		r.GET("/template/category/all", kaocenter.Template_Category_all)
+	})
 
-		r.GET("/template/category", kaocenter.Template_Category_)
+	r.GET("/frun", func(c *gin.Context) {
+		var uid string
+		uid = c.Query("uid")
+		temp := friendCtxC[uid]
+		if temp != nil {
+			c.String(200, uid+"이미 실행 중입니다.")
+		} else {
 
-		r.POST("/template/category/update", kaocenter.Template_Category_Update)
+			ctx, cancel := context.WithCancel(context.Background())
+			ctx = context.WithValue(ctx, "user_id", uid)
+			go kaosendrequest.FriendtalkProc(uid, ctx)
 
-		r.POST("/template/dormant/release", kaocenter.Template_Dormant_Release)
+			friendCtxC[uid] = cancel
+			friendUser[uid] = uid
 
-		r.GET("/group", kaocenter.Group_)
+			allCtxC["FR"+uid] = cancel
+			allService["FR"+uid] = uid
 
-		r.GET("/group/sender", kaocenter.Group_Sender)
+			c.String(200, uid+" 시작 신호 전달 완료")
+		}
+	})
 
-		r.POST("/group/sender/add", kaocenter.Group_Sender_Add)
+	r.GET("/flist", func(c *gin.Context) {
+		var key string
+		for k := range friendUser {
+			key = key + k + "\n"
+		}
+		c.String(200, key)
+	})
 
-		r.POST("/group/sender/remove", kaocenter.Group_Sender_Remove)
+	r.GET("/all", func(c *gin.Context) {
+		var key string
+		skeys := make([]string, 0, len(allService))
+		for k := range allService {
+			skeys = append(skeys, k)
+		}
+		sort.Strings(skeys)
+		for _, k := range skeys {
+			key = key + k + "\n"
+		}
+		c.String(200, key)
+	})
 
-		r.POST("/channel/create", kaocenter.Channel_Create_)
+	r.GET("/allstop", func(c *gin.Context) {
+		var key string
 
-		r.GET("/channel/all", kaocenter.Channel_all)
+		for k := range allService {
+			cancel := allCtxC[k].(context.CancelFunc)
+			cancel()
 
-		r.GET("/channel", kaocenter.Channel_)
+			delete(allCtxC, k)
+			delete(allService, k)
 
-		r.POST("/channel/update", kaocenter.Channel_Update_)
+		}
 
-		r.POST("/channel/senders", kaocenter.Channel_Senders_)
+		c.String(200, key)
+	})
 
-		r.POST("/channel/delete", kaocenter.Channel_Delete_)
+	r.Run(":" + config.Conf.PORT)
 
-		r.GET("/plugin/callbackUrl/list", kaocenter.Plugin_CallbackUrls_List)
-
-		r.POST("/plugin/callbackUrl/create", kaocenter.Plugin_callbackUrl_Create)
-
-		r.POST("/plugin/callbackUrl/update", kaocenter.Plugin_callbackUrl_Update)
-
-		r.POST("/plugin/callbackUrl/delete", kaocenter.Plugin_callbackUrl_Delete)
-
-		r.POST("/ft/image", kaocenter.FT_Upload)
-
-		r.POST("/ft/wide/image", kaocenter.FT_Wide_Upload)
-
-		r.Run(":" + config.Conf.PORT)
-	*/
+	config.Stdlog.Println(name+" 실행 포트 : ", config.Conf.PORT)
 }

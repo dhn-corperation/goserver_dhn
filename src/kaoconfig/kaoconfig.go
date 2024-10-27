@@ -34,7 +34,7 @@ var ResultLimit int = 1000
 var Client *resty.Client
 
 func InitConfig() {
-	path := "/root/DHNServer/log/DHNServer"
+	path := "/root/DHNServer_dhn/log/DHNServer"
 	//path := "./log/DHNServer"
 	loc, _ := time.LoadLocation("Asia/Seoul")
 	writer, err := rotatelogs.New(
@@ -54,13 +54,13 @@ func InitConfig() {
 	Stdlog = stdlog
 
 	Conf = readConfig()
-    BasePath = "/root/DHNServer/"
+    BasePath = "/root/DHNServer_dhn/"
 	Client = resty.New()
 
 }
 
 func readConfig() Config {
-	var configfile = "/root/DHNServer/config.ini"
+	var configfile = "/root/DHNServer_dhn/config.ini"
 	//var configfile = "./config.ini"
 	_, err := os.Stat(configfile)
 	if err != nil {
@@ -78,7 +78,7 @@ func readConfig() Config {
 }
 
 func InitCenterConfig() {
-	path := "/root/DHNCenter/log/DHNCenter"
+	path := "/root/DHNCenter_dhn/log/DHNCenter"
 //	path := "./log/DHNCenter"
 	loc, _ := time.LoadLocation("Asia/Seoul")
 	writer, err := rotatelogs.New(
@@ -98,13 +98,13 @@ func InitCenterConfig() {
 	Stdlog = stdlog
 
 	Conf = readCenterConfig()
-	BasePath = "/root/DHNCenter/"
+	BasePath = "/root/DHNCenter_dhn/"
 	//Client = resty.New()
 
 }
 
 func readCenterConfig() Config {
-	var configfile = "/root/DHNCenter/config.ini"
+	var configfile = "/root/DHNCenter_dhn/config.ini"
 //	var configfile = "./config.ini"
 	_, err := os.Stat(configfile)
 	if err != nil {
