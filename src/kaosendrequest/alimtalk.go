@@ -16,21 +16,21 @@ import (
 	databasepool "mycs/src/kaodatabasepool"
 )
 
-var atprocCnt int
-
 func AlimtalkProc(user_id string, ctx context.Context) {
-	atprocCnt = 1
+	done := make(chan bool)
+	atprocCnt := 1
 	config.Stdlog.Println(user_id, " - 알림톡 프로세스 시작 됨 ")
 
 	for {
 		if atprocCnt <=10 {
-			
 			select {
-				case <- ctx.Done():
+			case <- ctx.Done():
 			    config.Stdlog.Println(user_id, " - 알림톡 process가 10초 후에 종료 됨.")
 			    time.Sleep(10 * time.Second)
 			    config.Stdlog.Println(user_id, " - 알림톡 process 종료 완료")
 			    return
+			case <- done:
+				atprocCnt--
 			default:
 				var count sql.NullInt64
 				cnterr := databasepool.DB.QueryRowContext(ctx, "SELECT count(1) AS cnt FROM DHN_REQUEST_AT WHERE send_group IS NULL AND userid=?", user_id).Scan(&count)
@@ -54,8 +54,10 @@ func AlimtalkProc(user_id string, ctx context.Context) {
 						if rowcnt > 0 {
 							config.Stdlog.Println(user_id, " - 알림톡 발송 처리 시작 ( ", group_no, " ) : ", rowcnt, " 건 ")
 							atprocCnt++
-							go atsendProcess(group_no, user_id)
-				
+							go func() {
+								atsendProcess(group_no, user_id, atprocCnt)
+								done <- true // 작업 완료 시 done 채널에 신호
+							}()
 						}
 					}
 				}
@@ -64,7 +66,7 @@ func AlimtalkProc(user_id string, ctx context.Context) {
 	}
 }
 
-func atsendProcess(group_no, user_id string) {
+func atsendProcess(group_no, user_id string, pc int) {
 	var db = databasepool.DB
 	var conf = config.Conf
 	var stdlog = config.Stdlog
@@ -400,10 +402,8 @@ title) values %s`
 	}
 
 	db.Exec("delete from DHN_REQUEST_AT where send_group = '" + group_no + "' and userid = '" + user_id +"'")
-
-	atprocCnt--
 	
-	stdlog.Println("알림톡 발송 처리 완료 ( ", group_no, " ) : ", procCount, " 건 ( Proc Cnt :", atprocCnt, ")")
+	stdlog.Println("알림톡 발송 처리 완료 ( ", group_no, " ) : ", procCount, " 건  ( Proc Cnt :", pc, ")")
 	
 }
 

@@ -16,7 +16,6 @@ import (
 	databasepool "mycs/src/kaodatabasepool"
 )
 
-var ftprocCnt int
 var FisRunning bool
 var isStoping bool
 
@@ -27,19 +26,21 @@ type resultStr struct {
 }
 
 func FriendtalkProc(user_id string, ctx context.Context) {
-	ftprocCnt = 1
+	done := make(chan bool)
+	ftprocCnt := 1
 	config.Stdlog.Println(user_id, " - 친구톡 프로세스 시작 됨 ")
 
 	for {
 		if ftprocCnt <=10 {
 		
 			select {
-				case <- ctx.Done():
-			
+			case <- ctx.Done():
 			    config.Stdlog.Println(user_id+" - Friendtalk process가 10초 후에 종료 됨.")
 			    time.Sleep(10 * time.Second)
 			    config.Stdlog.Println(user_id+" - Friendtalk process 종료 완료")
 			    return
+			case <- done:
+				ftprocCnt--
 			default:
 						
 				var count int
@@ -66,7 +67,10 @@ func FriendtalkProc(user_id string, ctx context.Context) {
 						if rowcnt > 0 {
 							config.Stdlog.Println(user_id, " 친구톡 발송 처리 시작 ( ", group_no, " ) : ", rowcnt, " 건 ")
 							ftprocCnt ++
-							go ftsendProcess(group_no, user_id)
+							go func() {
+								ftsendProcess(group_no, user_id, ftprocCnt)
+								done <- true // 작업 완료 시 done 채널에 신호
+							}()
 						}
 					}
 				}
@@ -75,7 +79,7 @@ func FriendtalkProc(user_id string, ctx context.Context) {
 	}
 }
 
-func ftsendProcess(group_no, user_id string) {
+func ftsendProcess(group_no, user_id string, pc int) {
 
 	var db = databasepool.DB
 	var conf = config.Conf
@@ -457,9 +461,7 @@ carousel
 
 	db.Exec("delete from DHN_REQUEST where send_group = '" + group_no + "' and userid = '" + user_id + "'")
 
-	ftprocCnt--
-
-	stdlog.Println("친구톡 발송 처리 완료 ( ", group_no, " ) : ", procCount, " 건  ( Proc Cnt :", ftprocCnt, ")" )
+	stdlog.Println("친구톡 발송 처리 완료 ( ", group_no, " ) : ", procCount, " 건  ( Proc Cnt :", pc, ")" )
 	
 
 }
