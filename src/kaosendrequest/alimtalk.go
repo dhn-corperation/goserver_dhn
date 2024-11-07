@@ -36,7 +36,7 @@ func AlimtalkProc(user_id string, ctx context.Context) {
 				cnterr := databasepool.DB.QueryRowContext(ctx, "SELECT count(1) AS cnt FROM DHN_REQUEST_AT WHERE send_group IS NULL AND userid=?", user_id).Scan(&count)
 				
 				if cnterr != nil && cnterr != sql.ErrNoRows {
-					config.Stdlog.Println(user_id, "- 알림톡 DHN_REQUEST Table - select 오류 : " + cnterr.Error())
+					config.Stdlog.Println(user_id, " - 알림톡 DHN_REQUEST Table - select 오류 : " + cnterr.Error())
 					time.Sleep(10 * time.Second)
 				} else {
 					if count.Valid && count.Int64 > 0 {		
@@ -374,14 +374,14 @@ title) values %s`
 				_, err := databasepool.DB.Exec(stmt, resinsValues...)
 
 				if err != nil {
-					stdlog.Println("Result Table Insert 처리 중 오류 발생 ", err)
+					stdlog.Println(user_id, " - Result Table Insert 처리 중 오류 발생 ", err)
 				}
 
 				resinsStrs = nil
 				resinsValues = nil
 			}
 		} else {
-			stdlog.Println("알림톡 서버 처리 오류 !! ( ", string(resChan.BodyData), " )", result["msgid"])
+			stdlog.Println(user_id, " - 알림톡 서버 처리 오류 !! ( status : ", resChan.Statuscode, " / body : ", string(resChan.BodyData), " )", result["msgid"])
 			db.Exec("update DHN_REQUEST_AT set send_group = null where msgid = '" + result["msgid"] + "'")
 		}
 
@@ -394,7 +394,7 @@ title) values %s`
 		_, err := databasepool.DB.Exec(stmt, resinsValues...)
 
 		if err != nil {
-			stdlog.Println("Result Table Insert 처리 중 오류 발생 ", err)
+			stdlog.Println(user_id, " - Result Table Insert 처리 중 오류 발생 ", err)
 		}
 
 		resinsStrs = nil
@@ -403,7 +403,7 @@ title) values %s`
 
 	db.Exec("delete from DHN_REQUEST_AT where send_group = '" + group_no + "' and userid = '" + user_id +"'")
 	
-	stdlog.Println("알림톡 발송 처리 완료 ( ", group_no, " ) : ", procCount, " 건  ( Proc Cnt :", pc, ")")
+	stdlog.Println(user_id, " - 알림톡 발송 처리 완료 ( ", group_no, " ) : ", procCount, " 건  ( Proc Cnt :", pc, ")")
 	
 }
 

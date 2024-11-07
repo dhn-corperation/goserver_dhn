@@ -59,13 +59,13 @@ func FriendtalkProc(user_id string, ctx context.Context) {
 						updateRows, err := databasepool.DB.ExecContext(ctx, "update DHN_REQUEST set send_group = ? where send_group is null and userid = ? limit ?", group_no, user_id, strconv.Itoa(config.Conf.SENDLIMIT))
 				
 						if err != nil {
-							config.Stdlog.Println(user_id, " Request Table - send_group Update 오류")
+							config.Stdlog.Println(user_id, " - Request Table - send_group Update 오류")
 						}
 				
 						rowcnt, _ := updateRows.RowsAffected()
 				
 						if rowcnt > 0 {
-							config.Stdlog.Println(user_id, " 친구톡 발송 처리 시작 ( ", group_no, " ) : ", rowcnt, " 건 ")
+							config.Stdlog.Println(user_id, " - 친구톡 발송 처리 시작 ( ", group_no, " ) : ", rowcnt, " 건 ")
 							ftprocCnt ++
 							go func() {
 								ftsendProcess(group_no, user_id, ftprocCnt)
@@ -428,7 +428,7 @@ carousel
 				_, err := databasepool.DB.Exec(stmt, resinsValues...)
 
 				if err != nil {
-					stdlog.Println("Result Table Insert 처리 중 오류 발생 " + err.Error())
+					stdlog.Println(user_id, " - Result Table Insert 처리 중 오류 발생 " + err.Error())
 				}
 
 				resinsStrs = nil
@@ -436,7 +436,7 @@ carousel
 			}
 
 		} else {
-			stdlog.Println("친구톡 서버 처리 오류 : ( ", string(resChan.BodyData), " )", result["msgid"])
+			stdlog.Println(user_id, " - 친구톡 서버 처리 오류 : ( ", string(resChan.BodyData), " )", result["msgid"])
 			db.Exec("update DHN_REQUEST set send_group = null where msgid = '" + result["msgid"] + "'")
 		}
 		//}
@@ -452,7 +452,7 @@ carousel
 		_, err := databasepool.DB.Exec(stmt, resinsValues...)
 
 		if err != nil {
-			stdlog.Println("Result Table Insert 처리 중 오류 발생 ", err)
+			stdlog.Println(user_id, " - Result Table Insert 처리 중 오류 발생 ", err)
 		}
 
 		resinsStrs = nil
@@ -461,7 +461,7 @@ carousel
 
 	db.Exec("delete from DHN_REQUEST where send_group = '" + group_no + "' and userid = '" + user_id + "'")
 
-	stdlog.Println("친구톡 발송 처리 완료 ( ", group_no, " ) : ", procCount, " 건  ( Proc Cnt :", pc, ")" )
+	stdlog.Println(user_id, " - 친구톡 발송 처리 완료 ( ", group_no, " ) : ", procCount, " 건  ( Proc Cnt :", pc, ")" )
 	
 
 }
