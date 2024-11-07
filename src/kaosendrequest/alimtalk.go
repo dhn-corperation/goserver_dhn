@@ -17,20 +17,17 @@ import (
 )
 
 func AlimtalkProc(user_id string, ctx context.Context) {
-	done := make(chan bool)
 	atprocCnt := 0
 	config.Stdlog.Println(user_id, " - 알림톡 프로세스 시작 됨 ")
 
 	for {
-		if atprocCnt <=10 {
+		if atprocCnt < 10 {
 			select {
 			case <- ctx.Done():
 			    config.Stdlog.Println(user_id, " - 알림톡 process가 10초 후에 종료 됨.")
 			    time.Sleep(10 * time.Second)
 			    config.Stdlog.Println(user_id, " - 알림톡 process 종료 완료")
 			    return
-			case <- done:
-				atprocCnt--
 			default:
 				var count sql.NullInt64
 				cnterr := databasepool.DB.QueryRowContext(ctx, "SELECT count(1) AS cnt FROM DHN_REQUEST_AT WHERE send_group IS NULL AND userid=?", user_id).Scan(&count)
@@ -52,11 +49,13 @@ func AlimtalkProc(user_id string, ctx context.Context) {
 						rowcnt, _ := updateRows.RowsAffected()
 				
 						if rowcnt > 0 {
-							config.Stdlog.Println(user_id, " - 알림톡 발송 처리 시작 ( ", group_no, " ) : ", rowcnt, " 건 ")
 							atprocCnt++
+							config.Stdlog.Println(user_id, " - 알림톡 발송 처리 시작 ( ", group_no, " ) : ", rowcnt, " 건  ( Proc Cnt :", atprocCnt, ") - START")
 							go func() {
+								defer func() {
+									atprocCnt--
+								}()
 								atsendProcess(group_no, user_id, atprocCnt)
-								done <- true // 작업 완료 시 done 채널에 신호
 							}()
 						}
 					}
@@ -403,7 +402,7 @@ title) values %s`
 
 	db.Exec("delete from DHN_REQUEST_AT where send_group = '" + group_no + "' and userid = '" + user_id +"'")
 	
-	stdlog.Println(user_id, " - 알림톡 발송 처리 완료 ( ", group_no, " ) : ", procCount, " 건  ( Proc Cnt :", pc, ")")
+	stdlog.Println(user_id, " - 알림톡 발송 처리 완료 ( ", group_no, " ) : ", procCount, " 건  ( Proc Cnt :", pc, ") - END")
 	
 }
 

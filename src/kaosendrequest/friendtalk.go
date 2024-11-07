@@ -26,12 +26,11 @@ type resultStr struct {
 }
 
 func FriendtalkProc(user_id string, ctx context.Context) {
-	done := make(chan bool)
 	ftprocCnt := 0
 	config.Stdlog.Println(user_id, " - 친구톡 프로세스 시작 됨 ")
 
 	for {
-		if ftprocCnt <=10 {
+		if ftprocCnt < 10 {
 		
 			select {
 			case <- ctx.Done():
@@ -39,8 +38,6 @@ func FriendtalkProc(user_id string, ctx context.Context) {
 			    time.Sleep(10 * time.Second)
 			    config.Stdlog.Println(user_id+" - Friendtalk process 종료 완료")
 			    return
-			case <- done:
-				ftprocCnt--
 			default:
 						
 				var count int
@@ -65,11 +62,13 @@ func FriendtalkProc(user_id string, ctx context.Context) {
 						rowcnt, _ := updateRows.RowsAffected()
 				
 						if rowcnt > 0 {
-							config.Stdlog.Println(user_id, " - 친구톡 발송 처리 시작 ( ", group_no, " ) : ", rowcnt, " 건 ")
 							ftprocCnt ++
+							config.Stdlog.Println(user_id, " - 친구톡 발송 처리 시작 ( ", group_no, " ) : ", rowcnt, " 건  ( Proc Cnt :", ftprocCnt, ") - START")
 							go func() {
+								defer func() {
+									ftprocCnt--
+								}()
 								ftsendProcess(group_no, user_id, ftprocCnt)
-								done <- true // 작업 완료 시 done 채널에 신호
 							}()
 						}
 					}
@@ -461,7 +460,7 @@ carousel
 
 	db.Exec("delete from DHN_REQUEST where send_group = '" + group_no + "' and userid = '" + user_id + "'")
 
-	stdlog.Println(user_id, " - 친구톡 발송 처리 완료 ( ", group_no, " ) : ", procCount, " 건  ( Proc Cnt :", pc, ")" )
+	stdlog.Println(user_id, " - 친구톡 발송 처리 완료 ( ", group_no, " ) : ", procCount, " 건  ( Proc Cnt :", pc, ") - END" )
 	
 
 }
