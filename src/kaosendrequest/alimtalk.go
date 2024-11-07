@@ -18,7 +18,7 @@ import (
 
 func AlimtalkProc(user_id string, ctx context.Context) {
 	done := make(chan bool)
-	atprocCnt := 1
+	atprocCnt := 0
 	config.Stdlog.Println(user_id, " - 알림톡 프로세스 시작 됨 ")
 
 	for {

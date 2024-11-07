@@ -27,7 +27,7 @@ type resultStr struct {
 
 func FriendtalkProc(user_id string, ctx context.Context) {
 	done := make(chan bool)
-	ftprocCnt := 1
+	ftprocCnt := 0
 	config.Stdlog.Println(user_id, " - 친구톡 프로세스 시작 됨 ")
 
 	for {
