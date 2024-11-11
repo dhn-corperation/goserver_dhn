@@ -16,8 +16,8 @@ func InitDatabase() {
 		log.Fatal(err)
 	}
 
-	db.SetMaxIdleConns(10)
-	db.SetMaxOpenConns(50)
+	db.SetMaxIdleConns(50)
+	db.SetMaxOpenConns(200)
 
 	DB = db
 

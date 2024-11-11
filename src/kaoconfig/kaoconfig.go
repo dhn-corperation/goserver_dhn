@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"time"
+	"crypto/tls"
 
 	ini "github.com/BurntSushi/toml"
 	"github.com/go-resty/resty/v2"
@@ -55,7 +56,11 @@ func InitConfig() {
 
 	Conf = readConfig()
     BasePath = "/root/DHNServer_dhn/"
-	Client = resty.New()
+	Client = resty.New().
+		SetTimeout(5 * time.Second).
+		SetTLSClientConfig(&tls.Config{MinVersion: tls.VersionTLS12}).
+		SetRetryCount(3).
+		SetRetryWaitTime(2 * time.Second)
 
 }
 
