@@ -57,7 +57,7 @@ func InitConfig() {
 	Conf = readConfig()
     BasePath = "/root/DHNServer_dhn/"
 	Client = resty.New().
-		SetTimeout(5 * time.Second).
+		SetTimeout(3 * time.Second).
 		SetTLSClientConfig(&tls.Config{MinVersion: tls.VersionTLS12}).
 		SetRetryCount(3).
 		SetRetryWaitTime(2 * time.Second)

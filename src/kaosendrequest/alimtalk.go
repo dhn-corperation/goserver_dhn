@@ -40,7 +40,7 @@ func AlimtalkProc(user_id string, ctx context.Context) {
 						var startNow = time.Now()
 						var group_no = fmt.Sprintf("%02d%02d%02d%09d", startNow.Hour(), startNow.Minute(), startNow.Second(), startNow.Nanosecond())
 						
-						updateRows, err := databasepool.DB.ExecContext(ctx, "update DHN_REQUEST_AT set send_group = ? where send_group is null and userid = ? order by case when reserve_dt = '00000000000000' then reg_dt else str_to_date(reserve_dt, '%Y%m%d%H%i%s') end asc limit ?", group_no, user_id, strconv.Itoa(config.Conf.SENDLIMIT))
+						updateRows, err := databasepool.DB.ExecContext(ctx, "update DHN_REQUEST_AT set send_group = ? where send_group is null and userid = ? limit ?", group_no, user_id, strconv.Itoa(config.Conf.SENDLIMIT))
 				
 						if err != nil {
 							config.Stdlog.Println(user_id," - 알림톡 send_group Update 오류 : ", err)
