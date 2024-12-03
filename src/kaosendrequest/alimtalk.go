@@ -33,7 +33,7 @@ func AlimtalkProc(user_id string, ctx context.Context) {
 				cnterr := databasepool.DB.QueryRowContext(ctx, "SELECT count(1) AS cnt FROM DHN_REQUEST_AT WHERE send_group IS NULL AND userid=?", user_id).Scan(&count)
 				
 				if cnterr != nil && cnterr != sql.ErrNoRows {
-					config.Stdlog.Println(user_id, " - 알림톡 DHN_REQUEST Table - select 오류 : " + cnterr.Error())
+					config.Stdlog.Println(user_id, " - 알림톡 DHN_REQUEST_AT Table - select 오류 : " + cnterr.Error())
 					time.Sleep(10 * time.Second)
 				} else {
 					if count.Valid && count.Int64 > 0 {		
@@ -135,6 +135,50 @@ supplement ,
 price ,
 currency_type,
 title) values %s`
+
+	atreqinsStrs := []string{}
+	atreqinsValues := []interface{}{}
+	atreqinsQuery := `insert IGNORE into DHN_REQUEST_AT_RESEND(
+msgid,             
+userid,            
+ad_flag,           
+button1,           
+button2,           
+button3,           
+button4,           
+button5,           
+image_link,        
+image_url,         
+message_type,      
+msg,               
+msg_sms,           
+only_sms,          
+phn,               
+profile,           
+p_com,             
+p_invoice,         
+reg_dt,            
+remark1,           
+remark2,           
+remark3,
+remark4,           
+remark5,           
+reserve_dt,        
+sms_kind,          
+sms_lms_tit,       
+sms_sender,        
+s_code,            
+tmpl_id,           
+wide,              
+send_group,        
+supplement,        
+price,             
+currency_type,
+title,
+header,
+carousel,
+real_msgid
+) values %s`
 
 	resultChan := make(chan resultStr, config.Conf.SENDLIMIT) // resultStr 은 friendtalk에 정의 됨
 	var reswg sync.WaitGroup
@@ -292,6 +336,8 @@ title) values %s`
 	reswg.Wait()
 	chanCnt := len(resultChan)
 
+	nineErrCnt := 0
+
 	for i := 0; i < chanCnt; i++ {
 
 		resChan := <-resultChan
@@ -311,8 +357,8 @@ title) values %s`
 			if s.EqualFold(resCode, "3005") {
 				resCode = "0000"
 				resMessage = ""
-			} 
-			
+			}
+
 			resinsStrs = append(resinsStrs, "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
 			resinsValues = append(resinsValues, result["msgid"])
 			resinsValues = append(resinsValues, result["userid"])
@@ -370,6 +416,19 @@ title) values %s`
 			resinsValues = append(resinsValues, result["currency_type"])
 			resinsValues = append(resinsValues, result["title"])
 
+			if len(atreqinsStrs) >= 500 {
+				stmt := fmt.Sprintf(atreqinsQuery, s.Join(atreqinsStrs, ","))
+				//fmt.Println(stmt)
+				_, err := databasepool.DB.Exec(stmt, atreqinsValues...)
+
+				if err != nil {
+					stdlog.Println(user_id, " - 알림톡 9999 재발송 - Resend Table Insert 처리 중 오류 발생 ", err)
+				}
+
+				atreqinsStrs = nil
+				atreqinsValues = nil
+			}
+
 			if len(resinsStrs) >= 500 {
 				stmt := fmt.Sprintf(resinsquery, s.Join(resinsStrs, ","))
 				//fmt.Println(stmt)
@@ -382,12 +441,36 @@ title) values %s`
 				resinsStrs = nil
 				resinsValues = nil
 			}
+		} else if resChan.Statuscode == 500 {
+
+			var kakaoResp2 kakao.KakaoResponse2
+			json.Unmarshal(resChan.BodyData, &kakaoResp2)
+			
+			// var resCode = kakaoResp2.Code
+
+			// if s.EqualFold(resCode, "9999"){
+				nineErrCnt++
+				atreqinsStrs, atreqinsValues = insErrResend(result, atreqinsStrs, atreqinsValues)
+			// }
 		} else {
 			stdlog.Println(user_id, " - 알림톡 서버 처리 오류 !! ( status : ", resChan.Statuscode, " / body : ", string(resChan.BodyData), " )", result["msgid"])
 			db.Exec("update DHN_REQUEST_AT set send_group = null where msgid = '" + result["msgid"] + "'")
 		}
 
 		procCount++
+	}
+
+	if len(atreqinsStrs) > 0 {
+		stmt := fmt.Sprintf(atreqinsQuery, s.Join(atreqinsStrs, ","))
+		//fmt.Println(stmt)
+		_, err := databasepool.DB.Exec(stmt, atreqinsValues...)
+
+		if err != nil {
+			stdlog.Println(user_id, " - 알림톡 9999 재발송 - Resend Table Insert 처리 중 오류 발생 ", err)
+		}
+
+		atreqinsStrs = nil
+		atreqinsValues = nil
 	}
 
 	if len(resinsStrs) > 0 {
@@ -401,6 +484,10 @@ title) values %s`
 
 		resinsStrs = nil
 		resinsValues = nil
+	}
+
+	if nineErrCnt > 0 {
+		stdlog.Println(user_id, " - 알림톡 9999 재발송 - 재발송 삽입 : ", nineErrCnt, " 건")
 	}
 
 	db.Exec("delete from DHN_REQUEST_AT where send_group = '" + group_no + "' and userid = '" + user_id +"'")
@@ -428,4 +515,56 @@ func sendKakaoAlimtalk(reswg *sync.WaitGroup, c chan<- resultStr, alimtalk kakao
 	}
 	c <- temp
 
+}
+
+func insErrResend(result map[string]string, rs []string, rv []interface{}) ([]string, []interface{}) {
+	rs = append(rs, "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+	rv = append(rv, result["msgid"] + "_rs")
+	rv = append(rv, result["userid"])
+	rv = append(rv, result["ad_flag"])
+	rv = append(rv, result["button1"])
+	rv = append(rv, result["button2"])
+	rv = append(rv, result["button3"])
+	rv = append(rv, result["button4"])
+	rv = append(rv, result["button5"])
+	rv = append(rv, result["image_link"])
+	rv = append(rv, result["image_url"])
+	rv = append(rv, result["message_type"])
+	rv = append(rv, result["msg"])
+	rv = append(rv, result["msg_sms"])
+	rv = append(rv, result["only_sms"])
+	rv = append(rv, result["phn"])
+	rv = append(rv, result["profile"])
+	rv = append(rv, result["p_com"])
+	rv = append(rv, result["p_invoice"])
+	rv = append(rv, result["reg_dt"])
+	rv = append(rv, result["remark1"])
+	rv = append(rv, result["remark2"])
+	rv = append(rv, result["remark3"])
+	rv = append(rv, result["remark4"])
+	rv = append(rv, result["remark5"])
+	rv = append(rv, result["reserve_dt"])
+	rv = append(rv, result["sms_kind"])
+	rv = append(rv, result["sms_lms_tit"])
+	rv = append(rv, result["sms_sender"])
+	rv = append(rv, result["s_code"])
+	rv = append(rv, result["tmpl_id"])
+	rv = append(rv, result["wide"])
+	rv = append(rv, nil)
+	rv = append(rv, result["supplement"])
+
+	if len(result["price"]) > 0 {
+		price, _ := strconv.Atoi(result["price"])
+		rv = append(rv, price)
+	} else {
+		rv = append(rv, nil)
+	}
+
+	rv = append(rv, result["currency_type"])
+	rv = append(rv, result["title"])
+    rv = append(rv, result["header"])
+    rv = append(rv, result["carousel"])
+    rv = append(rv, result["msgid"])
+
+	return rs, rv
 }

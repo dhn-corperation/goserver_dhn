@@ -114,6 +114,11 @@ type KakaoResponse struct {
 	Message     string
 }
 
+type KakaoResponse2 struct {
+	Code        string
+	Message     string
+}
+
 type PollingResponse struct {
 	Code         string
 	Response_id  int

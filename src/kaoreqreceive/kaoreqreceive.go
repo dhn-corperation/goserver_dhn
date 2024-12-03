@@ -57,9 +57,6 @@ func ReqReceive(c *gin.Context) {
 		reqinsStrs := []string{}
 		reqinsValues := []interface{}{}
 
-		atreqinsStrs := []string{}
-		atreqinsValues := []interface{}{}
-
 		reqinsQuery := `insert IGNORE into DHN_REQUEST(
   msgid,             
   userid,            
@@ -103,6 +100,9 @@ func ReqReceive(c *gin.Context) {
   att_coupon      
 ) values %s
 	`
+
+		atreqinsStrs := []string{}
+		atreqinsValues := []interface{}{}
 		atreqinsQuery := `insert IGNORE into DHN_REQUEST_AT(
   msgid,             
   userid,            
