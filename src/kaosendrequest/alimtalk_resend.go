@@ -413,14 +413,14 @@ func resendKakaoAlimtalk(reswg *sync.WaitGroup, c chan<- resultStr, alimtalk kak
 	var seq int = 1
 
 	for {
-		alimtalk.Serial_number = alimtalk.Serial_number + string(seq)
+		alimtalk.Serial_number = alimtalk.Serial_number + strconv.Itoa(seq)
 		resp, err := config.Client.R().
 			SetHeaders(map[string]string{"Content-Type": "application/json"}).
 			SetBody(alimtalk).
 			Post(config.Conf.API_SERVER + "/v3/" + config.Conf.PROFILE_KEY + "/alimtalk/send")
 
 		if err != nil {
-			config.Stdlog.Println("알림톡 메시지 서버 호출 오류 : ", err)
+			config.Stdlog.Println("알림톡 9999 재발송 - 알림톡 메시지 서버 호출 오류 : ", err)
 			//	return nil
 		} else {
 			temp.Statuscode = resp.StatusCode()
