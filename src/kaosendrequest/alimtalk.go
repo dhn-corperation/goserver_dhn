@@ -416,19 +416,6 @@ real_msgid
 			resinsValues = append(resinsValues, result["currency_type"])
 			resinsValues = append(resinsValues, result["title"])
 
-			if len(atreqinsStrs) >= 500 {
-				stmt := fmt.Sprintf(atreqinsQuery, s.Join(atreqinsStrs, ","))
-				//fmt.Println(stmt)
-				_, err := databasepool.DB.Exec(stmt, atreqinsValues...)
-
-				if err != nil {
-					stdlog.Println(user_id, " - 알림톡 9999 재발송 - Resend Table Insert 처리 중 오류 발생 ", err)
-				}
-
-				atreqinsStrs = nil
-				atreqinsValues = nil
-			}
-
 			if len(resinsStrs) >= 500 {
 				stmt := fmt.Sprintf(resinsquery, s.Join(resinsStrs, ","))
 				//fmt.Println(stmt)
@@ -446,12 +433,25 @@ real_msgid
 			var kakaoResp2 kakao.KakaoResponse2
 			json.Unmarshal(resChan.BodyData, &kakaoResp2)
 			
-			// var resCode = kakaoResp2.Code
+			var resCode = kakaoResp2.Code
 
-			// if s.EqualFold(resCode, "9999"){
+			if s.EqualFold(resCode, "9999"){
 				nineErrCnt++
 				atreqinsStrs, atreqinsValues = insErrResend(result, atreqinsStrs, atreqinsValues)
-			// }
+
+				if len(atreqinsStrs) >= 500 {
+					stmt := fmt.Sprintf(atreqinsQuery, s.Join(atreqinsStrs, ","))
+					//fmt.Println(stmt)
+					_, err := databasepool.DB.Exec(stmt, atreqinsValues...)
+
+					if err != nil {
+						stdlog.Println(user_id, " - 알림톡 9999 재발송 - Resend Table Insert 처리 중 오류 발생 ", err)
+					}
+
+					atreqinsStrs = nil
+					atreqinsValues = nil
+				}
+			}
 		} else {
 			stdlog.Println(user_id, " - 알림톡 서버 처리 오류 !! ( status : ", resChan.Statuscode, " / body : ", string(resChan.BodyData), " )", result["msgid"])
 			db.Exec("update DHN_REQUEST_AT set send_group = null where msgid = '" + result["msgid"] + "'")
