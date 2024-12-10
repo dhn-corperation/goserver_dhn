@@ -1,7 +1,6 @@
 package kaosendrequest
 
 import (
-	//"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -421,7 +420,6 @@ func resendKakaoAlimtalk(reswg *sync.WaitGroup, c chan<- resultStr, alimtalk kak
 
 		if err != nil {
 			config.Stdlog.Println("알림톡 9999 재발송 - 알림톡 메시지 서버 호출 오류 : ", err)
-			//	return nil
 		} else {
 			temp.Statuscode = resp.StatusCode()
 			if temp.Statuscode != 500 {

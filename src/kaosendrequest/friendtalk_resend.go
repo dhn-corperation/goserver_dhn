@@ -409,7 +409,7 @@ carousel
 
 		} else {
 			stdlog.Println("친구톡 9999 재발송 - 친구톡 서버 처리 오류 : ( ", string(resChan.BodyData), " )", result["msgid"])
-			db.Exec("update DHN_REQUEST set send_group = null where msgid = '" + result["msgid"] + "'")
+			db.Exec("update DHN_REQUEST_RESEND set send_group = null where msgid = '" + result["msgid"] + "'")
 		}
 
 		procCount++
@@ -448,7 +448,10 @@ func resendKakao(reswg *sync.WaitGroup, c chan<- resultStr, friendtalk kakao.Fri
 			config.Stdlog.Println("친구톡 9999 재발송 - 친구톡 메시지 서버 호출 오류 : ", err)
 		} else {
 			temp.Statuscode = resp.StatusCode()
-			temp.BodyData = resp.Body()
+			if temp.Statuscode != 500 {
+				temp.BodyData = resp.Body()
+				break
+			}
 		}
 		seq++
 	}

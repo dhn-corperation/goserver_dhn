@@ -332,7 +332,6 @@ real_msgid
 		go sendKakaoAlimtalk(&reswg, resultChan, alimtalk, temp)
 	}
 
-
 	reswg.Wait()
 	chanCnt := len(resultChan)
 
@@ -346,10 +345,10 @@ real_msgid
 		if resChan.Statuscode == 200 {
 
 			var kakaoResp kakao.KakaoResponse
-			json.Unmarshal(resChan.BodyData, &kakaoResp)
-
 			var resdt = time.Now()
 			var resdtstr = fmt.Sprintf("%4d-%02d-%02d %02d:%02d:%02d", resdt.Year(), resdt.Month(), resdt.Day(), resdt.Hour(), resdt.Minute(), resdt.Second())
+
+			json.Unmarshal(resChan.BodyData, &kakaoResp)
 			
 			var resCode = kakaoResp.Code
 			var resMessage = kakaoResp.Message
@@ -418,7 +417,6 @@ real_msgid
 
 			if len(resinsStrs) >= 500 {
 				stmt := fmt.Sprintf(resinsquery, s.Join(resinsStrs, ","))
-				//fmt.Println(stmt)
 				_, err := databasepool.DB.Exec(stmt, resinsValues...)
 
 				if err != nil {
@@ -437,11 +435,10 @@ real_msgid
 
 			if s.EqualFold(resCode, "9999"){
 				nineErrCnt++
-				atreqinsStrs, atreqinsValues = insErrResend(result, atreqinsStrs, atreqinsValues)
+				atreqinsStrs, atreqinsValues = insAtErrResend(result, atreqinsStrs, atreqinsValues)
 
 				if len(atreqinsStrs) >= 500 {
 					stmt := fmt.Sprintf(atreqinsQuery, s.Join(atreqinsStrs, ","))
-					//fmt.Println(stmt)
 					_, err := databasepool.DB.Exec(stmt, atreqinsValues...)
 
 					if err != nil {
@@ -462,7 +459,6 @@ real_msgid
 
 	if len(atreqinsStrs) > 0 {
 		stmt := fmt.Sprintf(atreqinsQuery, s.Join(atreqinsStrs, ","))
-		//fmt.Println(stmt)
 		_, err := databasepool.DB.Exec(stmt, atreqinsValues...)
 
 		if err != nil {
@@ -475,7 +471,6 @@ real_msgid
 
 	if len(resinsStrs) > 0 {
 		stmt := fmt.Sprintf(resinsquery, s.Join(resinsStrs, ","))
-
 		_, err := databasepool.DB.Exec(stmt, resinsValues...)
 
 		if err != nil {
@@ -504,11 +499,8 @@ func sendKakaoAlimtalk(reswg *sync.WaitGroup, c chan<- resultStr, alimtalk kakao
 		SetBody(alimtalk).
 		Post(config.Conf.API_SERVER + "/v3/" + config.Conf.PROFILE_KEY + "/alimtalk/send")
 
-	//fmt.Println("SEND :", resp, err)
-
 	if err != nil {
 		config.Stdlog.Println("알림톡 메시지 서버 호출 오류 : ", err)
-		//	return nil
 	} else {
 		temp.Statuscode = resp.StatusCode()
 		temp.BodyData = resp.Body()
@@ -517,7 +509,7 @@ func sendKakaoAlimtalk(reswg *sync.WaitGroup, c chan<- resultStr, alimtalk kakao
 
 }
 
-func insErrResend(result map[string]string, rs []string, rv []interface{}) ([]string, []interface{}) {
+func insAtErrResend(result map[string]string, rs []string, rv []interface{}) ([]string, []interface{}) {
 	rs = append(rs, "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
 	rv = append(rv, result["msgid"] + "_rs")
 	rv = append(rv, result["userid"])
