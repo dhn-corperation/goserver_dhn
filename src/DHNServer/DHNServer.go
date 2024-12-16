@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"context"
 	"sort"
+	"encoding/json"
 
 	config "mycs/src/kaoconfig"
 	databasepool "mycs/src/kaodatabasepool"
@@ -329,6 +330,49 @@ Command :
 		}
 
 		c.String(200, key)
+	})
+
+	r.POST("/getkey", func(c *gin.Context) {
+		//AES-256 key 값
+		marttalkKey := "1a2753badbec41f2e34bedf2626a7e5e467a41d8941084de8474d775a2b3e50e"
+		genieKey := "5deb4682bf155a9f3e9945681d04030e66eb452accb63c387d445f63239bb4ed"
+		o2oKey := "06e5bc81b9c43d797c85d2f7e8d76c600d5e77093dde9826a10cd40e21393639"
+		speedtalkKey := "d7f1c26748704c5955efbfb70b611947853e2dd2c1cc57e1d0bb4216a55d8f3b"
+
+		uid := c.Request.Header.Get("uid")
+
+		result := map[string]string{}
+		var code string = "00"
+		var msg string = "성공"
+		var key string = ""
+
+		switch uid {
+		case "marttalk":
+			key = marttalkKey
+			break
+		case "genie":
+			key = genieKey
+			break
+		case "o2o":
+			key = o2oKey
+			break
+		case "speedtalk":
+			key = speedtalkKey
+			break
+		default:
+			code = "01"
+			msg = "등록된 키가 존재하지 않습니다."
+		}
+		result["code"] = code
+		result["msg"] = msg
+		result["key"] = key
+
+		jsonstr, err := json.Marshal(result)
+		if err != nil {
+			config.Stdlog.Println(err)	
+		}
+		
+		c.Data(200, "application/json", jsonstr)
 	})
 
 	r.Run(":" + config.Conf.PORT)
