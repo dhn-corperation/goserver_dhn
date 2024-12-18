@@ -21,7 +21,7 @@ func AlimtalkProc(user_id string, ctx context.Context) {
 	config.Stdlog.Println(user_id, " - 알림톡 프로세스 시작 됨 ")
 
 	for {
-		if atprocCnt < 20 {
+		if atprocCnt < 10 {
 			select {
 			case <- ctx.Done():
 			    config.Stdlog.Println(user_id, " - 알림톡 process가 10초 후에 종료 됨.")
