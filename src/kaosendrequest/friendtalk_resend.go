@@ -10,6 +10,7 @@ import(
 	"sync"
 	"time"
 
+	cm "mycs/src/kaocommon"
 	kakao "mycs/src/kakaojson"
 	config "mycs/src/kaoconfig"
 	databasepool "mycs/src/kaodatabasepool"
@@ -59,6 +60,8 @@ func FriendtalkResendProc(ctx context.Context) {
 								ftResendProcess(group_no, procCnt)
 							}()
 						}
+					} else {
+						time.Sleep(10 * time.Second)
 					}
 				}
 			}
@@ -94,7 +97,7 @@ func ftResendProcess(group_no string, pc int) {
 
 	resinsStrs := []string{}
 	resinsValues := []interface{}{}
-	resinsquery := `insert IGNORE into DHN_RESULT(
+	resinsquery := `insert into DHN_RESULT(
 msgid ,
 userid ,
 ad_flag ,
@@ -343,7 +346,7 @@ carousel
 			var resMessage = kakaoResp.Message
 
 			resinsStrs = append(resinsStrs, "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
-			resinsValues = append(resinsValues, result["msgid"])
+			resinsValues = append(resinsValues, result["real_msgid"])
 			resinsValues = append(resinsValues, result["userid"])
 			resinsValues = append(resinsValues, result["ad_flag"])
 			resinsValues = append(resinsValues, result["button1"])
@@ -396,15 +399,7 @@ carousel
 			resinsValues = append(resinsValues, result["carousel"])
 
 			if len(resinsStrs) >= 500 {
-				stmt := fmt.Sprintf(resinsquery, s.Join(resinsStrs, ","))
-				_, err := databasepool.DB.Exec(stmt, resinsValues...)
-
-				if err != nil {
-					stdlog.Println("친구톡 9999 재발송 - Result Table Insert 처리 중 오류 발생 " + err.Error())
-				}
-
-				resinsStrs = nil
-				resinsValues = nil
+				resinsStrs, resinsValues = cm.InsMsg(resinsquery, resinsStrs, resinsValues)
 			}
 
 		} else {
@@ -416,15 +411,7 @@ carousel
 	}
 
 	if len(resinsStrs) > 0 {
-		stmt := fmt.Sprintf(resinsquery, s.Join(resinsStrs, ","))
-		_, err := databasepool.DB.Exec(stmt, resinsValues...)
-
-		if err != nil {
-			stdlog.Println("친구톡 9999 재발송 - Result Table Insert 처리 중 오류 발생 ", err)
-		}
-
-		resinsStrs = nil
-		resinsValues = nil
+		resinsStrs, resinsValues = cm.InsMsg(resinsquery, resinsStrs, resinsValues)
 	}
 
 	stdlog.Println("친구톡 9999 재발송 - 발송 처리 완료 ( ", group_no, " ) : ", procCount, " 건  ( Proc Cnt :", pc, ") - END" )

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	cm "mycs/src/kaocommon"
 	kakao "mycs/src/kakaojson"
 	config "mycs/src/kaoconfig"
 	databasepool "mycs/src/kaodatabasepool"
@@ -28,37 +29,50 @@ func AlimtalkResendProc(ctx context.Context) {
 			    config.Stdlog.Println("알림톡 9999 재발송 - process 종료 완료")
 			    return
 			default:
-				var count sql.NullInt64
-				cnterr := databasepool.DB.QueryRowContext(ctx, "SELECT count(1) AS cnt FROM DHN_REQUEST_AT_RESEND WHERE send_group IS NULL").Scan(&count)
-				
-				if cnterr != nil && cnterr != sql.ErrNoRows {
-					config.Stdlog.Println("알림톡 9999 재발송 - DHN_REQUEST_AT_RESEND Table - select 오류 : " + cnterr.Error())
-					time.Sleep(10 * time.Second)
-				} else {
-					if count.Valid && count.Int64 > 0 {		
-						var startNow = time.Now()
-						var group_no = fmt.Sprintf("%02d%02d%02d%09d", startNow.Hour(), startNow.Minute(), startNow.Second(), startNow.Nanosecond())
-						
-						updateRows, err := databasepool.DB.ExecContext(ctx, "update DHN_REQUEST_AT_RESEND set send_group = ? where send_group is null limit ?", group_no, strconv.Itoa(config.Conf.SENDLIMIT))
-				
-						if err != nil {
-							config.Stdlog.Println("알림톡 9999 재발송 - send_group Update 오류 : ", err)
-						}
-				
-						rowcnt, _ := updateRows.RowsAffected()
-				
-						if rowcnt > 0 {
-							atprocCnt++
-							config.Stdlog.Println("알림톡 9999 재발송 - 발송 처리 시작 ( ", group_no, " ) : ", rowcnt, " 건  ( Proc Cnt :", atprocCnt, ") - START")
-							go func() {
-								defer func() {
-									atprocCnt--
-								}()
-								atResendProcess(group_no, atprocCnt)
-							}()
-						}
-					}
+				tx, err := databasepool.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
+				if err != nil {
+					config.Stdlog.Println("알림톡 9999 재발송 트랜잭션 초기화 실패 : ", err)
+					continue
 				}
+
+				var startNow = time.Now()
+				var group_no = fmt.Sprintf("%02d%02d%02d%09d", startNow.Hour(), startNow.Minute(), startNow.Second(), startNow.Nanosecond()) + strconv.Itoa(atprocCnt)
+
+				updateRows, err := tx.Exec("update DHN_REQUEST_AT_RESEND as a join (select id from DHN_REQUEST_AT_RESEND where send_group is null limit ?) as b on a.id = b.id set send_group = ?", strconv.Itoa(config.Conf.SENDLIMIT), group_no)
+
+				if err != nil {
+					config.Stdlog.Println("알림톡 9999 재발송 send_group update 오류 : ", err)
+					tx.Rollback()
+					continue
+				}
+				rowCount, err := updateRows.RowsAffected()
+
+				if err != nil {
+					config.Stdlog.Println("알림톡 9999 재발송 RowsAffected 확인 오류 : ", err)
+					tx.Rollback()
+					continue
+				}
+
+				if rowCount == 0 {
+					tx.Rollback()
+					time.Sleep(500 * time.Millisecond)
+					continue
+				}
+				if err := tx.Commit(); err != nil {
+					config.Stdlog.Println("알림톡 9999 재발송 tx Commit 오류 : ", err)
+					tx.Rollback()
+					continue
+				}
+
+				atprocCnt++
+				config.Stdlog.Println("알림톡 9999 재발송 발송 처리 시작 ( ", group_no, " ) : ", rowCount, " 건  ( Proc Cnt :", atprocCnt, ") - START")
+
+				go func() {
+					defer func() {
+						atprocCnt--
+					}()
+					atResendProcess(group_no, atprocCnt)
+				}()
 			}
 		}
 	}
@@ -370,16 +384,7 @@ title) values %s`
 			resinsValues = append(resinsValues, result["title"])
 
 			if len(resinsStrs) >= 500 {
-				stmt := fmt.Sprintf(resinsquery, s.Join(resinsStrs, ","))
-				//fmt.Println(stmt)
-				_, err := databasepool.DB.Exec(stmt, resinsValues...)
-
-				if err != nil {
-					stdlog.Println("알림톡 9999 재발송 - Result Table Insert 처리 중 오류 발생 ", err)
-				}
-
-				resinsStrs = nil
-				resinsValues = nil
+				resinsStrs, resinsValues = cm.InsMsg(resinsquery, resinsStrs, resinsValues)
 			}
 		} else {
 			stdlog.Println("알림톡 9999 재발송 - 알림톡 서버 처리 오류 !! ( status : ", resChan.Statuscode, " / body : ", string(resChan.BodyData), " )", result["msgid"])
@@ -390,16 +395,7 @@ title) values %s`
 	}
 
 	if len(resinsStrs) > 0 {
-		stmt := fmt.Sprintf(resinsquery, s.Join(resinsStrs, ","))
-
-		_, err := databasepool.DB.Exec(stmt, resinsValues...)
-
-		if err != nil {
-			stdlog.Println("알림톡 9999 재발송 - Result Table Insert 처리 중 오류 발생 ", err)
-		}
-
-		resinsStrs = nil
-		resinsValues = nil
+		resinsStrs, resinsValues = cm.InsMsg(resinsquery, resinsStrs, resinsValues)
 	}
 	
 	stdlog.Println("알림톡 9999 재발송 - 발송 처리 완료 ( ", group_no, " ) : ", procCount, " 건  ( Proc Cnt :", pc, ") - END")

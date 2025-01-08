@@ -9,6 +9,7 @@ import (
 	"strconv"
 	s "strings"
 	"time"
+	cm "mycs/src/kaocommon"
 
 	"crypto/aes"
 	"crypto/cipher"
@@ -57,7 +58,7 @@ func ReqReceive(c *gin.Context) {
 		reqinsStrs := []string{}
 		reqinsValues := []interface{}{}
 
-		reqinsQuery := `insert IGNORE into DHN_REQUEST(
+		reqinsQuery := `insert into DHN_REQUEST(
   msgid,             
   userid,            
   ad_flag,           
@@ -103,7 +104,7 @@ func ReqReceive(c *gin.Context) {
 
 		atreqinsStrs := []string{}
 		atreqinsValues := []interface{}{}
-		atreqinsQuery := `insert IGNORE into DHN_REQUEST_AT(
+		atreqinsQuery := `insert into DHN_REQUEST_AT(
   msgid,             
   userid,            
   ad_flag,           
@@ -374,80 +375,86 @@ carousel
                 atreqinsValues = append(atreqinsValues, msg[i].Carousel)
 			}
 			if len(reqinsStrs) >= 500 {
-				stmt := fmt.Sprintf(reqinsQuery, s.Join(reqinsStrs, ","))
-				_, err := databasepool.DB.Exec(stmt, reqinsValues...)
+				// stmt := fmt.Sprintf(reqinsQuery, s.Join(reqinsStrs, ","))
+				// _, err := databasepool.DB.Exec(stmt, reqinsValues...)
 
-				if err != nil {
-					config.Stdlog.Println("MSG Table Insert 처리 중 오류 발생 " + err.Error())
-				}
+				// if err != nil {
+				// 	config.Stdlog.Println("MSG Table Insert 처리 중 오류 발생 " + err.Error())
+				// }
 
-				reqinsStrs = nil
-				reqinsValues = nil
+				// reqinsStrs = nil
+				// reqinsValues = nil
+				reqinsStrs, reqinsValues = cm.InsMsg(reqinsQuery, reqinsStrs, reqinsValues)
 			}
 
 			if len(atreqinsStrs) >= 500 {
-				stmt := fmt.Sprintf(atreqinsQuery, s.Join(atreqinsStrs, ","))
-				_, err := databasepool.DB.Exec(stmt, atreqinsValues...)
+				// stmt := fmt.Sprintf(atreqinsQuery, s.Join(atreqinsStrs, ","))
+				// _, err := databasepool.DB.Exec(stmt, atreqinsValues...)
 
-				if err != nil {
-					config.Stdlog.Println("AT Table Insert 처리 중 오류 발생 " + err.Error())
-				}
+				// if err != nil {
+				// 	config.Stdlog.Println("AT Table Insert 처리 중 오류 발생 " + err.Error())
+				// }
 
-				atreqinsStrs = nil
-				atreqinsValues = nil
+				// atreqinsStrs = nil
+				// atreqinsValues = nil
+				atreqinsStrs, atreqinsValues = cm.InsMsg(atreqinsQuery, atreqinsStrs, atreqinsValues)
 			}
 
 			if len(resinsStrs) >= 500 {
-				stmt := fmt.Sprintf(resinsquery, s.Join(resinsStrs, ","))
-				//fmt.Println(stmt)
-				_, err := databasepool.DB.Exec(stmt, resinsValues...)
+				// stmt := fmt.Sprintf(resinsquery, s.Join(resinsStrs, ","))
+				// //fmt.Println(stmt)
+				// _, err := databasepool.DB.Exec(stmt, resinsValues...)
 
-				if err != nil {
-					config.Stdlog.Println("Result Table Insert 처리 중 오류 발생 " + err.Error())
-				}
+				// if err != nil {
+				// 	config.Stdlog.Println("Result Table Insert 처리 중 오류 발생 " + err.Error())
+				// }
 
-				resinsStrs = nil
-				resinsValues = nil
+				// resinsStrs = nil
+				// resinsValues = nil
+				resinsStrs, resinsValues = cm.InsMsg(resinsquery, resinsStrs, resinsValues)
 			}
 		}
 		//fmt.Println(len(reqinsStrs))
 		if len(reqinsStrs) > 0 {
-			stmt := fmt.Sprintf(reqinsQuery, s.Join(reqinsStrs, ","))
-			//fmt.Println(stmt)
-			_, err := databasepool.DB.Exec(stmt, reqinsValues...)
+			// stmt := fmt.Sprintf(reqinsQuery, s.Join(reqinsStrs, ","))
+			// //fmt.Println(stmt)
+			// _, err := databasepool.DB.Exec(stmt, reqinsValues...)
 
-			if err != nil {
-				fmt.Println("FT Table Insert 처리 중 오류 발생 " + err.Error())
-			}
+			// if err != nil {
+			// 	fmt.Println("FT Table Insert 처리 중 오류 발생 " + err.Error())
+			// }
 
-			reqinsStrs = nil
-			reqinsValues = nil
+			// reqinsStrs = nil
+			// reqinsValues = nil
+			reqinsStrs, reqinsValues = cm.InsMsg(reqinsQuery, reqinsStrs, reqinsValues)
 		}
 
 		if len(atreqinsStrs) > 0 {
-			stmt := fmt.Sprintf(atreqinsQuery, s.Join(atreqinsStrs, ","))
-			//fmt.Println(stmt)
-			_, err := databasepool.DB.Exec(stmt, atreqinsValues...)
+			// stmt := fmt.Sprintf(atreqinsQuery, s.Join(atreqinsStrs, ","))
+			// //fmt.Println(stmt)
+			// _, err := databasepool.DB.Exec(stmt, atreqinsValues...)
 
-			if err != nil {
-				fmt.Println("AT Table Insert 처리 중 오류 발생 " + err.Error())
-			}
+			// if err != nil {
+			// 	fmt.Println("AT Table Insert 처리 중 오류 발생 " + err.Error())
+			// }
 
-			atreqinsStrs = nil
-			atreqinsValues = nil
+			// atreqinsStrs = nil
+			// atreqinsValues = nil
+			atreqinsStrs, atreqinsValues = cm.InsMsg(atreqinsQuery, atreqinsStrs, atreqinsValues)
 		}
 
 		if len(resinsStrs) > 0 {
-			stmt := fmt.Sprintf(resinsquery, s.Join(resinsStrs, ","))
-			//fmt.Println(stmt)
-			_, err := databasepool.DB.Exec(stmt, resinsValues...)
+			// stmt := fmt.Sprintf(resinsquery, s.Join(resinsStrs, ","))
+			// //fmt.Println(stmt)
+			// _, err := databasepool.DB.Exec(stmt, resinsValues...)
 
-			if err != nil {
-				config.Stdlog.Println("Result Table Insert 처리 중 오류 발생 " + err.Error())
-			}
+			// if err != nil {
+			// 	config.Stdlog.Println("Result Table Insert 처리 중 오류 발생 " + err.Error())
+			// }
 
-			resinsStrs = nil
-			resinsValues = nil
+			// resinsStrs = nil
+			// resinsValues = nil
+			resinsStrs, resinsValues = cm.InsMsg(resinsquery, resinsStrs, resinsValues)
 		}
 
 		errlog.Println("처리 끝", startTime)

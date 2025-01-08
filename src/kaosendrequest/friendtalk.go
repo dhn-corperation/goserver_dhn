@@ -10,7 +10,9 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"sync/atomic"
 
+	cm "mycs/src/kaocommon"
 	kakao "mycs/src/kakaojson"
 	config "mycs/src/kaoconfig"
 	databasepool "mycs/src/kaodatabasepool"
@@ -22,64 +24,81 @@ type resultStr struct {
 	Result     map[string]string
 }
 
-func FriendtalkProc(user_id string, ctx context.Context) {
+func FriendtalkProc(ctx context.Context) {
 	ftprocCnt := 0
-	config.Stdlog.Println(user_id, " - 친구톡 프로세스 시작 됨 ")
+	config.Stdlog.Println("친구톡 프로세스 시작 됨 ")
 
 	for {
-		if ftprocCnt < 10 {
+		if ftprocCnt < 50 {
 		
 			select {
 			case <- ctx.Done():
-			    config.Stdlog.Println(user_id+" - 친구톡 process가 10초 후에 종료 됨.")
+			    config.Stdlog.Println("친구톡 process가 10초 후에 종료 됨.")
 			    time.Sleep(10 * time.Second)
-			    config.Stdlog.Println(user_id+" - 친구톡 process 종료 완료")
+			    config.Stdlog.Println("친구톡 process 종료 완료")
 			    return
 			default:
-				var count sql.NullInt64
-				cnterr := databasepool.DB.QueryRowContext(ctx, "select count(1) as cnt from DHN_REQUEST  where send_group is null and userid = ? limit 1", user_id).Scan(&count)
-	
-				if cnterr != nil && cnterr != sql.ErrNoRows {
-					config.Stdlog.Println(user_id, " - 친구톡 DHN_REQUEST Table - select 오류 : " + cnterr.Error())
-					time.Sleep(10 * time.Second)
-				} else {
-					if count.Valid && count.Int64 > 0 {
-						var startNow = time.Now()
-						var group_no = fmt.Sprintf("%02d%02d%02d%09d", startNow.Hour(), startNow.Minute(), startNow.Second(), startNow.Nanosecond())
-				
-						updateRows, err := databasepool.DB.ExecContext(ctx, "update DHN_REQUEST set send_group = ? where send_group is null and userid = ? limit ?", group_no, user_id, strconv.Itoa(config.Conf.SENDLIMIT))
-				
-						if err != nil {
-							config.Stdlog.Println(user_id, " - 친구톡 send_group Update 오류 : ", err)
-						}
-				
-						rowcnt, _ := updateRows.RowsAffected()
-				
-						if rowcnt > 0 {
-							ftprocCnt ++
-							config.Stdlog.Println(user_id, " - 친구톡 발송 처리 시작 ( ", group_no, " ) : ", rowcnt, " 건  ( Proc Cnt :", ftprocCnt, ") - START")
-							go func() {
-								defer func() {
-									ftprocCnt--
-								}()
-								ftsendProcess(group_no, user_id, ftprocCnt)
-							}()
-						}
-					}
+				tx, err := databasepool.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
+
+				if err != nil {
+					config.Stdlog.Println("친구톡 트랜잭션 초기화 실패 : ", err)
+					continue
 				}
+
+				var startNow = time.Now()
+				var group_no = fmt.Sprintf("%02d%02d%02d%09d", startNow.Hour(), startNow.Minute(), startNow.Second(), startNow.Nanosecond()) + strconv.Itoa(ftprocCnt)
+
+				// updateRows, err := databasepool.DB.Exec("update DHN_REQUEST set send_group = ? where send_group is null and userid = ? limit ?", group_no, user_id, strconv.Itoa(config.Conf.SENDLIMIT))
+				updateRows, err := tx.Exec("update DHN_REQUEST as a join (select id from DHN_REQUEST where send_group is null limit ?) as b on a.id = b.id set send_group = ?", strconv.Itoa(config.Conf.SENDLIMIT), group_no)
+
+				if err != nil {
+					config.Stdlog.Println("친구톡 send_group update 오류 : ", err)
+					tx.Rollback()
+					continue
+				}
+
+				rowCount, err := updateRows.RowsAffected()
+
+				if err != nil {
+					config.Stdlog.Println("친구톡 RowsAffected 확인 오류 : ", err)
+					tx.Rollback()
+					continue
+				}
+
+				if rowCount == 0 {
+					tx.Rollback()
+					time.Sleep(500 * time.Millisecond)
+					continue
+				}
+
+				if err := tx.Commit(); err != nil {
+					config.Stdlog.Println("친구톡 tx Commit 오류 : ", err)
+					tx.Rollback()
+					continue
+				}
+
+				ftprocCnt++
+				config.Stdlog.Println("친구톡 발송 처리 시작 ( ", group_no, " ) : ", rowCount, " 건  ( Proc Cnt :", ftprocCnt, ") - START")
+
+				go func() {
+					defer func() {
+						ftprocCnt--
+					}()
+					ftsendProcess(group_no, ftprocCnt)
+				}()
 			}
 		}
 	}
 }
 
-func ftsendProcess(group_no, user_id string, pc int) {
+func ftsendProcess(group_no string, pc int) {
 
 	var db = databasepool.DB
 	var conf = config.Conf
 	var stdlog = config.Stdlog
 	var errlog = config.Stdlog
 
-	reqsql := "select * from DHN_REQUEST where send_group = '" + group_no + "' and message_type like 'f%' and userid ='" + user_id + "'"
+	reqsql := "select * from DHN_REQUEST where send_group = '" + group_no + "'"
 
 	reqrows, err := db.Query(reqsql)
 	if err != nil {
@@ -100,7 +119,7 @@ func ftsendProcess(group_no, user_id string, pc int) {
 
 	resinsStrs := []string{}
 	resinsValues := []interface{}{}
-	resinsquery := `insert IGNORE into DHN_RESULT(
+	resinsquery := `insert into DHN_RESULT(
 msgid ,
 userid ,
 ad_flag ,
@@ -149,7 +168,7 @@ carousel
 
 	ftreqinsStrs := []string{}
 	ftreqinsValues := []interface{}{}
-	ftreqinsQuery := `insert IGNORE into DHN_REQUEST_RESEND(
+	ftreqinsQuery := `insert into DHN_REQUEST_RESEND(
 msgid,             
 userid,            
 ad_flag,           
@@ -195,6 +214,8 @@ real_msgid
 
 
 	resultChan := make(chan resultStr, config.Conf.SENDLIMIT)
+	defer close(resultChan)
+
 	var reswg sync.WaitGroup
 
 	for reqrows.Next() {
@@ -452,15 +473,7 @@ real_msgid
 			resinsValues = append(resinsValues, result["carousel"])
 
 			if len(resinsStrs) >= 500 {
-				stmt := fmt.Sprintf(resinsquery, s.Join(resinsStrs, ","))
-				_, err := databasepool.DB.Exec(stmt, resinsValues...)
-
-				if err != nil {
-					stdlog.Println(user_id, " - Result Table Insert 처리 중 오류 발생 " + err.Error())
-				}
-
-				resinsStrs = nil
-				resinsValues = nil
+				resinsStrs, resinsValues = cm.InsMsg(resinsquery, resinsStrs, resinsValues)
 			}
 
 		} else if resChan.Statuscode == 500 {
@@ -474,19 +487,11 @@ real_msgid
 				ftreqinsStrs, ftreqinsValues = insFtErrResend(result, ftreqinsStrs, ftreqinsValues)
 
 				if len(ftreqinsStrs) >= 500 {
-					stmt := fmt.Sprintf(ftreqinsQuery, s.Join(ftreqinsStrs, ","))
-					_, err := databasepool.DB.Exec(stmt, ftreqinsValues...)
-
-					if err != nil {
-						stdlog.Println(user_id, " - 친구톡 9999 재발송 - Resend Table Insert 처리 중 오류 발생 ", err)
-					}
-
-					ftreqinsStrs = nil
-					ftreqinsValues = nil
+					ftreqinsStrs, ftreqinsValues = cm.InsMsg(ftreqinsQuery, ftreqinsStrs, ftreqinsValues)
 				}
 			}
 		} else {
-			stdlog.Println(user_id, " - 친구톡 서버 처리 오류 : ( ", string(resChan.BodyData), " )", result["msgid"])
+			stdlog.Println("친구톡 서버 처리 오류 : ( ", string(resChan.BodyData), " )", result["msgid"])
 			db.Exec("update DHN_REQUEST set send_group = null where msgid = '" + result["msgid"] + "'")
 		}
 
@@ -494,38 +499,34 @@ real_msgid
 	}
 
 	if len(ftreqinsStrs) > 0 {
-		stmt := fmt.Sprintf(ftreqinsQuery, s.Join(ftreqinsStrs, ","))
-		_, err := databasepool.DB.Exec(stmt, ftreqinsValues...)
-
-		if err != nil {
-			stdlog.Println(user_id, " - 친구톡 9999 재발송 - Resend Table Insert 처리 중 오류 발생 ", err)
-		}
-
-		ftreqinsStrs = nil
-		ftreqinsValues = nil
+		ftreqinsStrs, ftreqinsValues = cm.InsMsg(ftreqinsQuery, ftreqinsStrs, ftreqinsValues)
 	}
 
 	if len(resinsStrs) > 0 {
-		stmt := fmt.Sprintf(resinsquery, s.Join(resinsStrs, ","))
-		_, err := databasepool.DB.Exec(stmt, resinsValues...)
-
-		if err != nil {
-			stdlog.Println(user_id, " - Result Table Insert 처리 중 오류 발생 ", err)
-		}
-
-		resinsStrs = nil
-		resinsValues = nil
+		resinsStrs, resinsValues = cm.InsMsg(resinsquery, resinsStrs, resinsValues)
 	}
 
-	db.Exec("delete from DHN_REQUEST where send_group = '" + group_no + "' and userid = '" + user_id + "'")
+	// db.Exec("delete from DHN_REQUEST where send_group = '" + group_no + "'")
 
-	stdlog.Println(user_id, " - 친구톡 발송 처리 완료 ( ", group_no, " ) : ", procCount, " 건  ( Proc Cnt :", pc, ") - END" )
+	stdlog.Println("친구톡 발송 처리 완료 ( ", group_no, " ) : ", procCount, " 건  ( Proc Cnt :", pc, ") - END" )
 	
 
 }
 
 func sendKakao(reswg *sync.WaitGroup, c chan<- resultStr, friendtalk kakao.Friendtalk, temp resultStr) {
 	defer reswg.Done()
+
+	for {
+		currentRL := atomic.LoadInt32(&config.RL)
+		if currentRL > 0 {
+			if atomic.CompareAndSwapInt32(&config.RL, currentRL, currentRL - 1) {
+				break
+			}
+			// config.RL--
+			// break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 
 	resp, err := config.Client.R().
 		SetHeaders(map[string]string{"Content-Type": "application/json"}).

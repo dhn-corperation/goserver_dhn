@@ -10,68 +10,83 @@ import (
 	s "strings"
 	"sync"
 	"time"
+	"sync/atomic"
 
+	cm "mycs/src/kaocommon"
 	kakao "mycs/src/kakaojson"
 	config "mycs/src/kaoconfig"
 	databasepool "mycs/src/kaodatabasepool"
 )
 
-func AlimtalkProc(user_id string, ctx context.Context) {
+func AlimtalkProc(ctx context.Context) {
 	atprocCnt := 0
-	config.Stdlog.Println(user_id, " - 알림톡 프로세스 시작 됨 ")
+	config.Stdlog.Println("알림톡 프로세스 시작 됨 ")
 
 	for {
-		if atprocCnt < 10 {
+		if atprocCnt < 50 {
 			select {
 			case <- ctx.Done():
-			    config.Stdlog.Println(user_id, " - 알림톡 process가 10초 후에 종료 됨.")
+			    config.Stdlog.Println("알림톡 process가 10초 후에 종료 됨.")
 			    time.Sleep(10 * time.Second)
-			    config.Stdlog.Println(user_id, " - 알림톡 process 종료 완료")
+			    config.Stdlog.Println("알림톡 process 종료 완료")
 			    return
 			default:
-				var count sql.NullInt64
-				cnterr := databasepool.DB.QueryRowContext(ctx, "SELECT count(1) AS cnt FROM DHN_REQUEST_AT WHERE send_group IS NULL AND userid=?", user_id).Scan(&count)
-				
-				if cnterr != nil && cnterr != sql.ErrNoRows {
-					config.Stdlog.Println(user_id, " - 알림톡 DHN_REQUEST_AT Table - select 오류 : " + cnterr.Error())
-					time.Sleep(10 * time.Second)
-				} else {
-					if count.Valid && count.Int64 > 0 {		
-						var startNow = time.Now()
-						var group_no = fmt.Sprintf("%02d%02d%02d%09d", startNow.Hour(), startNow.Minute(), startNow.Second(), startNow.Nanosecond())
-						
-						updateRows, err := databasepool.DB.ExecContext(ctx, "update DHN_REQUEST_AT set send_group = ? where send_group is null and userid = ? limit ?", group_no, user_id, strconv.Itoa(config.Conf.SENDLIMIT))
-				
-						if err != nil {
-							config.Stdlog.Println(user_id," - 알림톡 send_group Update 오류 : ", err)
-						}
-				
-						rowcnt, _ := updateRows.RowsAffected()
-				
-						if rowcnt > 0 {
-							atprocCnt++
-							config.Stdlog.Println(user_id, " - 알림톡 발송 처리 시작 ( ", group_no, " ) : ", rowcnt, " 건  ( Proc Cnt :", atprocCnt, ") - START")
-							go func() {
-								defer func() {
-									atprocCnt--
-								}()
-								atsendProcess(group_no, user_id, atprocCnt)
-							}()
-						}
-					}
+				tx, err := databasepool.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
+				if err != nil {
+					config.Stdlog.Println("알림톡 트랜잭션 초기화 실패 : ", err)
+					continue
 				}
+
+				var startNow = time.Now()
+				var group_no = fmt.Sprintf("%02d%02d%02d%09d", startNow.Hour(), startNow.Minute(), startNow.Second(), startNow.Nanosecond()) + strconv.Itoa(atprocCnt)
+
+				updateRows, err := tx.Exec("update DHN_REQUEST_AT as a join (select id from DHN_REQUEST_AT where send_group is null limit ?) as b on a.id = b.id set send_group = ?", strconv.Itoa(config.Conf.SENDLIMIT), group_no)
+
+				if err != nil {
+					config.Stdlog.Println("알림톡 send_group update 오류 : ", err)
+					tx.Rollback()
+					continue
+				}
+				rowCount, err := updateRows.RowsAffected()
+
+				if err != nil {
+					config.Stdlog.Println("알림톡 RowsAffected 확인 오류 : ", err)
+					tx.Rollback()
+					continue
+				}
+
+				if rowCount == 0 {
+					tx.Rollback()
+					time.Sleep(500 * time.Millisecond)
+					continue
+				}
+				if err := tx.Commit(); err != nil {
+					config.Stdlog.Println("알림톡 tx Commit 오류 : ", err)
+					tx.Rollback()
+					continue
+				}
+
+				atprocCnt++
+				config.Stdlog.Println("알림톡 발송 처리 시작 ( ", group_no, " ) : ", rowCount, " 건  ( Proc Cnt :", atprocCnt, ") - START")
+
+				go func() {
+					defer func() {
+						atprocCnt--
+					}()
+					atsendProcess(group_no, atprocCnt)
+				}()
 			}
 		}
 	}
 }
 
-func atsendProcess(group_no, user_id string, pc int) {
+func atsendProcess(group_no string, pc int) {
 	var db = databasepool.DB
 	var conf = config.Conf
 	var stdlog = config.Stdlog
 	var errlog = config.Stdlog
 
-	reqsql := "select * from DHN_REQUEST_AT where send_group = '" + group_no + "' and userid = '" + user_id +"'"
+	reqsql := "select * from DHN_REQUEST_AT where send_group = '" + group_no + "'"
 
 	reqrows, err := db.Query(reqsql)
 	if err != nil {
@@ -92,7 +107,7 @@ func atsendProcess(group_no, user_id string, pc int) {
 
 	resinsStrs := []string{}
 	resinsValues := []interface{}{}
-	resinsquery := `insert IGNORE into DHN_RESULT(
+	resinsquery := `insert into DHN_RESULT(
 msgid ,
 userid ,
 ad_flag ,
@@ -138,7 +153,7 @@ title) values %s`
 
 	atreqinsStrs := []string{}
 	atreqinsValues := []interface{}{}
-	atreqinsQuery := `insert IGNORE into DHN_REQUEST_AT_RESEND(
+	atreqinsQuery := `insert into DHN_REQUEST_AT_RESEND(
 msgid,             
 userid,            
 ad_flag,           
@@ -181,6 +196,8 @@ real_msgid
 ) values %s`
 
 	resultChan := make(chan resultStr, config.Conf.SENDLIMIT) // resultStr 은 friendtalk에 정의 됨
+	defer close(resultChan)
+	
 	var reswg sync.WaitGroup
 
 	for reqrows.Next() {
@@ -416,18 +433,10 @@ real_msgid
 			resinsValues = append(resinsValues, result["title"])
 
 			if len(resinsStrs) >= 500 {
-				stmt := fmt.Sprintf(resinsquery, s.Join(resinsStrs, ","))
-				_, err := databasepool.DB.Exec(stmt, resinsValues...)
-
-				if err != nil {
-					stdlog.Println(user_id, " - Result Table Insert 처리 중 오류 발생 ", err)
-				}
-
-				resinsStrs = nil
-				resinsValues = nil
+				resinsStrs, resinsValues = cm.InsMsg(resinsquery, resinsStrs, resinsValues)
 			}
 		} else if resChan.Statuscode == 500 {
-
+			
 			var kakaoResp2 kakao.KakaoResponse2
 			json.Unmarshal(resChan.BodyData, &kakaoResp2)
 			
@@ -438,19 +447,11 @@ real_msgid
 				atreqinsStrs, atreqinsValues = insAtErrResend(result, atreqinsStrs, atreqinsValues)
 
 				if len(atreqinsStrs) >= 500 {
-					stmt := fmt.Sprintf(atreqinsQuery, s.Join(atreqinsStrs, ","))
-					_, err := databasepool.DB.Exec(stmt, atreqinsValues...)
-
-					if err != nil {
-						stdlog.Println(user_id, " - 알림톡 9999 재발송 - Resend Table Insert 처리 중 오류 발생 ", err)
-					}
-
-					atreqinsStrs = nil
-					atreqinsValues = nil
+					atreqinsStrs, atreqinsValues = cm.InsMsg(atreqinsQuery, atreqinsStrs, atreqinsValues)
 				}
 			}
 		} else {
-			stdlog.Println(user_id, " - 알림톡 서버 처리 오류 !! ( status : ", resChan.Statuscode, " / body : ", string(resChan.BodyData), " )", result["msgid"])
+			stdlog.Println("알림톡 서버 처리 오류 !! ( status : ", resChan.Statuscode, " / body : ", string(resChan.BodyData), " )", result["msgid"])
 			db.Exec("update DHN_REQUEST_AT set send_group = null where msgid = '" + result["msgid"] + "'")
 		}
 
@@ -458,41 +459,35 @@ real_msgid
 	}
 
 	if len(atreqinsStrs) > 0 {
-		stmt := fmt.Sprintf(atreqinsQuery, s.Join(atreqinsStrs, ","))
-		_, err := databasepool.DB.Exec(stmt, atreqinsValues...)
-
-		if err != nil {
-			stdlog.Println(user_id, " - 알림톡 9999 재발송 - Resend Table Insert 처리 중 오류 발생 ", err)
-		}
-
-		atreqinsStrs = nil
-		atreqinsValues = nil
+		atreqinsStrs, atreqinsValues = cm.InsMsg(atreqinsQuery, atreqinsStrs, atreqinsValues)
 	}
 
 	if len(resinsStrs) > 0 {
-		stmt := fmt.Sprintf(resinsquery, s.Join(resinsStrs, ","))
-		_, err := databasepool.DB.Exec(stmt, resinsValues...)
-
-		if err != nil {
-			stdlog.Println(user_id, " - Result Table Insert 처리 중 오류 발생 ", err)
-		}
-
-		resinsStrs = nil
-		resinsValues = nil
+		resinsStrs, resinsValues = cm.InsMsg(resinsquery, resinsStrs, resinsValues)
 	}
 
 	if nineErrCnt > 0 {
-		stdlog.Println(user_id, " - 알림톡 9999 재발송 - 재발송 삽입 : ", nineErrCnt, " 건")
+		stdlog.Println("알림톡 9999 재발송 - 재발송 삽입 : ", nineErrCnt, " 건")
 	}
 
-	db.Exec("delete from DHN_REQUEST_AT where send_group = '" + group_no + "' and userid = '" + user_id +"'")
+	// db.Exec("delete from DHN_REQUEST_AT where send_group = '" + group_no + "'")
 	
-	stdlog.Println(user_id, " - 알림톡 발송 처리 완료 ( ", group_no, " ) : ", procCount, " 건  ( Proc Cnt :", pc, ") - END")
+	stdlog.Println("알림톡 발송 처리 완료 ( ", group_no, " ) : ", procCount, " 건  ( Proc Cnt :", pc, ") - END")
 	
 }
 
 func sendKakaoAlimtalk(reswg *sync.WaitGroup, c chan<- resultStr, alimtalk kakao.Alimtalk, temp resultStr) {
 	defer reswg.Done()
+
+	for {
+		currentRL := atomic.LoadInt32(&config.RL)
+		if currentRL > 0 {
+			if atomic.CompareAndSwapInt32(&config.RL, currentRL, currentRL - 1) {
+				break
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 
 	resp, err := config.Client.R().
 		SetHeaders(map[string]string{"Content-Type": "application/json"}).
@@ -506,7 +501,6 @@ func sendKakaoAlimtalk(reswg *sync.WaitGroup, c chan<- resultStr, alimtalk kakao
 		temp.BodyData = resp.Body()
 	}
 	c <- temp
-
 }
 
 func insAtErrResend(result map[string]string, rs []string, rv []interface{}) ([]string, []interface{}) {

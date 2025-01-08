@@ -5,9 +5,14 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"database/sql"
+	// "database/sql"
 	"context"
 	"sort"
+
+	"log"
+	"net/http"
+
+	_ "net/http/pprof"
 
 	config "mycs/src/kaoconfig"
 	databasepool "mycs/src/kaodatabasepool"
@@ -74,6 +79,10 @@ func (service *Service) Manage() (string, error) {
 
 func main() {
 
+	go func() {
+		log.Println(http.ListenAndServe(":6060", nil))
+	}()
+
 	config.InitConfig()
 
 	databasepool.InitDatabase()
@@ -118,69 +127,85 @@ func resultProc() {
 	allService := map[string]string{}
 	allCtxC := map[string]interface{}{}
 
-	alim_user_list, error := databasepool.DB.Query("select distinct user_id from DHN_CLIENT_LIST where use_flag = 'Y' and alimtalk='Y'")
+	// alim_user_list, error := databasepool.DB.Query("select distinct user_id from DHN_CLIENT_LIST where use_flag = 'Y' and alimtalk='Y'")
 
-	isAlim := true
-	if error != nil {
-		config.Stdlog.Println("알림톡 유저 select 오류 ")
-		isAlim = false
-	}
-	defer alim_user_list.Close()
+	// isAlim := true
+	// if error != nil {
+	// 	config.Stdlog.Println("알림톡 유저 select 오류 ")
+	// 	isAlim = false
+	// }
+	// defer alim_user_list.Close()
 
-	alimUser := map[string]string{}
-	alimCtxC := map[string]interface{}{}
+	// alimUser := map[string]string{}
+	// alimCtxC := map[string]interface{}{}
 
-	if isAlim {
-		var user_id sql.NullString
-		for alim_user_list.Next() {
+	// if isAlim {
+		// var user_id sql.NullString
+		// for alim_user_list.Next() {
 
-			alim_user_list.Scan(&user_id)
+		// 	alim_user_list.Scan(&user_id)
 
-			ctx, cancel := context.WithCancel(context.Background())
-			go kaosendrequest.AlimtalkProc(user_id.String, ctx)
+		// 	ctx, cancel := context.WithCancel(context.Background())
+		// 	// go kaosendrequest.AlimtalkProc(user_id.String, ctx)
+		// 	go kaosendrequest.AlimtalkProc(user_id.String, ctx)
 
-			alimCtxC[user_id.String] = cancel
-			alimUser[user_id.String] = user_id.String
+		// 	alimCtxC[user_id.String] = cancel
+		// 	alimUser[user_id.String] = user_id.String
 
-			allCtxC["AL"+user_id.String] = cancel
-			allService["AL"+user_id.String] = user_id.String
+		// 	allCtxC["AL"+user_id.String] = cancel
+		// 	allService["AL"+user_id.String] = user_id.String
 
-		}
-	}
+		// }
+	// }
+
+	atctx, cancel := context.WithCancel(context.Background())
+	go kaosendrequest.AlimtalkProc(atctx)
+	allCtxC["AL"] = cancel
+	allService["AL"] = "AL"
+
 	atrsctx, _ := context.WithCancel(context.Background())
 	go kaosendrequest.AlimtalkResendProc(atrsctx)
+	allCtxC["ALRS"] = cancel
+	allService["ALRS"] = "ALRS"
 
-	friend_user_list, error := databasepool.DB.Query("select distinct user_id from DHN_CLIENT_LIST where use_flag = 'Y' and friendtalk='Y'")
-	isFriend := true
-	if error != nil {
-		config.Stdlog.Println("알림톡 유저 select 오류 ")
-		isFriend = false
-	}
-	defer friend_user_list.Close()
+	// friend_user_list, error := databasepool.DB.Query("select distinct user_id from DHN_CLIENT_LIST where use_flag = 'Y' and friendtalk='Y'")
+	// isFriend := true
+	// if error != nil {
+	// 	config.Stdlog.Println("알림톡 유저 select 오류 ")
+	// 	isFriend = false
+	// }
+	// defer friend_user_list.Close()
 
-	friendUser := map[string]string{}
-	friendCtxC := map[string]interface{}{}
+	// friendUser := map[string]string{}
+	// friendCtxC := map[string]interface{}{}
 
-	if isFriend {
-		var user_id sql.NullString
-		for friend_user_list.Next() {
+	// if isFriend {
+	// 	var user_id sql.NullString
+	// 	for friend_user_list.Next() {
 
-			friend_user_list.Scan(&user_id)
+	// 		friend_user_list.Scan(&user_id)
 
-			ctx, cancel := context.WithCancel(context.Background())
-			go kaosendrequest.FriendtalkProc(user_id.String, ctx)
+	// 		ctx, cancel := context.WithCancel(context.Background())
+	// 		go kaosendrequest.FriendtalkProc(user_id.String, ctx)
 
-			friendCtxC[user_id.String] = cancel
-			friendUser[user_id.String] = user_id.String
+	// 		friendCtxC[user_id.String] = cancel
+	// 		friendUser[user_id.String] = user_id.String
 
-			allCtxC["FR"+user_id.String] = cancel
-			allService["FR"+user_id.String] = user_id.String
+	// 		allCtxC["FR"+user_id.String] = cancel
+	// 		allService["FR"+user_id.String] = user_id.String
 
-		} 
-	}
+	// 	} 
+	// }
+
+	ftctx, cancel := context.WithCancel(context.Background())
+	go kaosendrequest.FriendtalkProc(ftctx)
+	allCtxC["FR"] = cancel
+	allService["FR"] = "FR"
 
 	ftrsctx, _ := context.WithCancel(context.Background())
 	go kaosendrequest.FriendtalkResendProc(ftrsctx)
+	allCtxC["FRRS"] = cancel
+	allService["FRRS"] = "FRRS"
 	
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -203,105 +228,105 @@ Command :
 		c.String(200, serCmd)
 	})
 
-	r.GET("/astop", func(c *gin.Context) {
-		var uid string
-		uid = c.Query("uid")
-		temp := alimCtxC[uid]
-		if temp != nil {
-			cancel := alimCtxC[uid].(context.CancelFunc)
-			cancel()
-			delete(alimCtxC, uid)
-			delete(alimUser, uid)
+	// r.GET("/astop", func(c *gin.Context) {
+	// 	var uid string
+	// 	uid = c.Query("uid")
+	// 	temp := alimCtxC[uid]
+	// 	if temp != nil {
+	// 		cancel := alimCtxC[uid].(context.CancelFunc)
+	// 		cancel()
+	// 		delete(alimCtxC, uid)
+	// 		delete(alimUser, uid)
 
-			delete(allService, "AL"+uid)
-			delete(allCtxC, "AL"+uid)
+	// 		delete(allService, "AL"+uid)
+	// 		delete(allCtxC, "AL"+uid)
 
-			c.String(200, uid+" 종료 신호 전달 완료")
-		} else {
-			c.String(200, uid+"는 실행 중이지 않습니다.")
-		}
+	// 		c.String(200, uid+" 종료 신호 전달 완료")
+	// 	} else {
+	// 		c.String(200, uid+"는 실행 중이지 않습니다.")
+	// 	}
 
-	})
+	// })
 
-	r.GET("/arun", func(c *gin.Context) {
-		var uid string
-		uid = c.Query("uid")
-		temp := alimCtxC[uid]
-		if temp != nil {
-			c.String(200, uid+"이미 실행 중입니다.")
-		} else {
+	// r.GET("/arun", func(c *gin.Context) {
+		// var uid string
+		// uid = c.Query("uid")
+		// temp := alimCtxC[uid]
+		// if temp != nil {
+		// 	c.String(200, uid+"이미 실행 중입니다.")
+		// } else {
 
-			ctx, cancel := context.WithCancel(context.Background())
-			ctx = context.WithValue(ctx, "user_id", uid)
-			go kaosendrequest.AlimtalkProc(uid, ctx)
+		// 	ctx, cancel := context.WithCancel(context.Background())
+		// 	ctx = context.WithValue(ctx, "user_id", uid)
+		// 	go kaosendrequest.AlimtalkProc(uid, ctx)
 
-			alimCtxC[uid] = cancel
-			alimUser[uid] = uid
+		// 	alimCtxC[uid] = cancel
+		// 	alimUser[uid] = uid
 
-			allCtxC["AL"+uid] = cancel
-			allService["AL"+uid] = uid
+		// 	allCtxC["AL"+uid] = cancel
+		// 	allService["AL"+uid] = uid
 
-			c.String(200, uid+" 시작 신호 전달 완료")
-		}
-	})
+		// 	c.String(200, uid+" 시작 신호 전달 완료")
+		// }
+	// })
 
-	r.GET("/alist", func(c *gin.Context) {
-		var key string
-		for k := range alimUser {
-			key = key + k + "\n"
-		}
-		c.String(200, key)
-	})
+	// r.GET("/alist", func(c *gin.Context) {
+	// 	var key string
+	// 	for k := range alimUser {
+	// 		key = key + k + "\n"
+	// 	}
+	// 	c.String(200, key)
+	// })
 
-	r.GET("/fstop", func(c *gin.Context) {
-		var uid string
-		uid = c.Query("uid")
-		temp := friendCtxC[uid]
-		if temp != nil {
-			cancel := friendCtxC[uid].(context.CancelFunc)
-			cancel()
-			delete(friendCtxC, uid)
-			delete(friendUser, uid)
+	// r.GET("/fstop", func(c *gin.Context) {
+	// 	var uid string
+	// 	uid = c.Query("uid")
+	// 	temp := friendCtxC[uid]
+	// 	if temp != nil {
+	// 		cancel := friendCtxC[uid].(context.CancelFunc)
+	// 		cancel()
+	// 		delete(friendCtxC, uid)
+	// 		delete(friendUser, uid)
 
-			delete(allService, "FR"+uid)
-			delete(allCtxC, "FR"+uid)
+	// 		delete(allService, "FR"+uid)
+	// 		delete(allCtxC, "FR"+uid)
 
-			c.String(200, uid+" 종료 신호 전달 완료")
-		} else {
-			c.String(200, uid+"는 실행 중이지 않습니다.")
-		}
+	// 		c.String(200, uid+" 종료 신호 전달 완료")
+	// 	} else {
+	// 		c.String(200, uid+"는 실행 중이지 않습니다.")
+	// 	}
 
-	})
+	// })
 
-	r.GET("/frun", func(c *gin.Context) {
-		var uid string
-		uid = c.Query("uid")
-		temp := friendCtxC[uid]
-		if temp != nil {
-			c.String(200, uid+"이미 실행 중입니다.")
-		} else {
+	// r.GET("/frun", func(c *gin.Context) {
+	// 	var uid string
+	// 	uid = c.Query("uid")
+	// 	temp := friendCtxC[uid]
+	// 	if temp != nil {
+	// 		c.String(200, uid+"이미 실행 중입니다.")
+	// 	} else {
 
-			ctx, cancel := context.WithCancel(context.Background())
-			ctx = context.WithValue(ctx, "user_id", uid)
-			go kaosendrequest.FriendtalkProc(uid, ctx)
+	// 		ctx, cancel := context.WithCancel(context.Background())
+	// 		ctx = context.WithValue(ctx, "user_id", uid)
+	// 		go kaosendrequest.FriendtalkProc(uid, ctx)
 
-			friendCtxC[uid] = cancel
-			friendUser[uid] = uid
+	// 		friendCtxC[uid] = cancel
+	// 		friendUser[uid] = uid
 
-			allCtxC["FR"+uid] = cancel
-			allService["FR"+uid] = uid
+	// 		allCtxC["FR"+uid] = cancel
+	// 		allService["FR"+uid] = uid
 
-			c.String(200, uid+" 시작 신호 전달 완료")
-		}
-	})
+	// 		c.String(200, uid+" 시작 신호 전달 완료")
+	// 	}
+	// })
 
-	r.GET("/flist", func(c *gin.Context) {
-		var key string
-		for k := range friendUser {
-			key = key + k + "\n"
-		}
-		c.String(200, key)
-	})
+	// r.GET("/flist", func(c *gin.Context) {
+	// 	var key string
+	// 	for k := range friendUser {
+	// 		key = key + k + "\n"
+	// 	}
+	// 	c.String(200, key)
+	// })
 
 	r.GET("/all", func(c *gin.Context) {
 		var key string
@@ -334,4 +359,5 @@ Command :
 	r.Run(":" + config.Conf.PORT)
 
 	config.Stdlog.Println(name+" 실행 포트 : ", config.Conf.PORT)
+
 }

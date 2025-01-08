@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 	"crypto/tls"
+	"sync/atomic"
 
 	ini "github.com/BurntSushi/toml"
 	"github.com/go-resty/resty/v2"
@@ -25,6 +26,7 @@ type Config struct {
 	SENDLIMIT       int
 	PHONE_MSG_FLAG  string
 	DEBUG           string
+	REALLIMIT 		int
 }
 
 var Conf Config
@@ -33,6 +35,7 @@ var BasePath string
 var IsRunning bool = true
 var ResultLimit int = 1000
 var Client *resty.Client
+var RL int32
 
 func InitConfig() {
 	path := "/root/DHNServer_dhn/log/DHNServer"
@@ -61,6 +64,15 @@ func InitConfig() {
 		SetTLSClientConfig(&tls.Config{MinVersion: tls.VersionTLS12}).
 		SetRetryCount(3).
 		SetRetryWaitTime(2 * time.Second)
+
+	RL = int32(Conf.REALLIMIT)
+
+	go func(rl int32){
+		for{
+			time.Sleep(1 * time.Second)
+			atomic.StoreInt32(&RL, rl)
+		}
+	}(RL)
 
 }
 

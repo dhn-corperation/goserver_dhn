@@ -57,6 +57,7 @@ type TemplateRequest struct {
 	SenderKey     string `json:"senderKey" binding:"required"`
 	TemplateCode  string `json:"templateCode" binding:"required"`
 	SenderKeyType string `json:"senderKeyType,omitempty"`
+	Comment string `json:"comment,omitempty"`
 }
 
 type TemplateUpdate struct {
