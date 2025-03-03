@@ -1,16 +1,15 @@
 package kaosendrequest
 
 import (
-	//"bytes"
-	"database/sql"
-	"encoding/json"
 	"fmt"
+	"sync"
+	"time"
 	"context"
 	"strconv"
 	s "strings"
-	"sync"
-	"time"
 	"sync/atomic"
+	"database/sql"
+	"encoding/json"
 
 	cm "mycs/src/kaocommon"
 	kakao "mycs/src/kakaojson"
@@ -23,7 +22,7 @@ func AlimtalkProc(ctx context.Context) {
 	config.Stdlog.Println("알림톡 프로세스 시작 됨 ")
 
 	for {
-		if atprocCnt < 50 {
+		if atprocCnt < 30 {
 			select {
 			case <- ctx.Done():
 			    config.Stdlog.Println("알림톡 process가 10초 후에 종료 됨.")
@@ -436,7 +435,7 @@ real_msgid
 				resinsStrs, resinsValues = cm.InsMsg(resinsquery, resinsStrs, resinsValues)
 			}
 		} else if resChan.Statuscode == 500 {
-			
+
 			var kakaoResp2 kakao.KakaoResponse2
 			json.Unmarshal(resChan.BodyData, &kakaoResp2)
 			

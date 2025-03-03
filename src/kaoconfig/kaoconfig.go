@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"time"
+	"net/http"
 	"crypto/tls"
 	"sync/atomic"
 
@@ -59,11 +60,17 @@ func InitConfig() {
 
 	Conf = readConfig()
     BasePath = "/root/DHNServer_dhn/"
+
 	Client = resty.New().
 		SetTimeout(100 * time.Second).
 		SetTLSClientConfig(&tls.Config{MinVersion: tls.VersionTLS12}).
 		SetRetryCount(3).
-		SetRetryWaitTime(2 * time.Second)
+		SetRetryWaitTime(2 * time.Second).
+		SetTransport(&http.Transport{
+			MaxIdleConns:		Conf.REALLIMIT,
+			MaxIdleConnsPerHost: Conf.REALLIMIT/5,
+			IdleConnTimeout:	 90 * time.Second,
+		})
 
 	RL = int32(Conf.REALLIMIT)
 

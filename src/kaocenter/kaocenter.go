@@ -403,17 +403,34 @@ func Template_Cancel_Request(c *gin.Context) {
 func Template_Update(c *gin.Context) {
 	conf := config.Conf
 	
-	fmt.Println("T U Call")
-	param := &TemplateUpdate{}
+	// fmt.Println("T U Call")
+	// param := &TemplateUpdate{}
 	
-	err := c.Bind(param)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, err.Error())
-		return
-	}
-	jsonstr, _ := json.Marshal(param)
-	fmt.Println("Json : ", string(jsonstr))
-	buff := bytes.NewBuffer(jsonstr)
+	// err := c.Bind(param)
+	// if err != nil {
+	// 	c.JSON(http.StatusBadRequest, err.Error())
+	// 	return
+	// }
+	// jsonstr, _ := json.Marshal(param)
+	// fmt.Println("Json : ", string(jsonstr))
+	// buff := bytes.NewBuffer(jsonstr)
+	// req, err := http.NewRequest("POST", conf.CENTER_SERVER+"api/v2/"+conf.PROFILE_KEY+"/alimtalk/template/update", buff)
+	// if err != nil {
+	// 	c.JSON(http.StatusBadRequest, err.Error())
+	// 	return
+	// }
+	// req.Header.Add("Content-Type", "application/json")
+	// //client := &http.Client{}
+	// resp, err := centerClient.Do(req)
+	// if err != nil {
+	// 	c.JSON(http.StatusBadRequest, err.Error())
+	// 	return
+	// }
+	// bytes, _ := ioutil.ReadAll(resp.Body)
+
+	byteData, _ := c.GetRawData()
+
+	buff := bytes.NewBuffer(byteData)
 	req, err := http.NewRequest("POST", conf.CENTER_SERVER+"api/v2/"+conf.PROFILE_KEY+"/alimtalk/template/update", buff)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, err.Error())
@@ -427,6 +444,7 @@ func Template_Update(c *gin.Context) {
 		return
 	}
 	bytes, _ := ioutil.ReadAll(resp.Body)
+
 	c.Data(http.StatusOK, "application/json", bytes)
 }
 

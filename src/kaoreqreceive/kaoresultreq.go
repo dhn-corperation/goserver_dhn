@@ -101,6 +101,7 @@ func Resultreq(c *gin.Context) {
 		if err != nil {
 			errlog.Fatal(sqlstr, err)
 		}
+		defer reqrows.Close()
 
 		columnTypes, err := reqrows.ColumnTypes()
 		if err != nil {

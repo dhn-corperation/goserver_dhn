@@ -18,8 +18,8 @@ func InitDatabase() {
 		log.Fatal(err)
 	}
 
-	db.SetMaxIdleConns(350)
-	db.SetMaxOpenConns(700)
+	db.SetMaxIdleConns(50)
+	db.SetMaxOpenConns(100)
 	db.SetConnMaxIdleTime(1 * time.Minute)
 
 	DB = db

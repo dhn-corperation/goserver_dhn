@@ -1,16 +1,15 @@
 package kaosendrequest
 
 import (
-	//"bytes"
-	"database/sql"
-	"encoding/json"
 	"fmt"
-	"context"
-	s "strings"
-	"strconv"
 	"sync"
 	"time"
+	"context"
+	"strconv"
+	s "strings"
 	"sync/atomic"
+	"database/sql"
+	"encoding/json"
 
 	cm "mycs/src/kaocommon"
 	kakao "mycs/src/kakaojson"
@@ -29,7 +28,7 @@ func FriendtalkProc(ctx context.Context) {
 	config.Stdlog.Println("친구톡 프로세스 시작 됨 ")
 
 	for {
-		if ftprocCnt < 50 {
+		if ftprocCnt < 30 {
 		
 			select {
 			case <- ctx.Done():
@@ -48,7 +47,6 @@ func FriendtalkProc(ctx context.Context) {
 				var startNow = time.Now()
 				var group_no = fmt.Sprintf("%02d%02d%02d%09d", startNow.Hour(), startNow.Minute(), startNow.Second(), startNow.Nanosecond()) + strconv.Itoa(ftprocCnt)
 
-				// updateRows, err := databasepool.DB.Exec("update DHN_REQUEST set send_group = ? where send_group is null and userid = ? limit ?", group_no, user_id, strconv.Itoa(config.Conf.SENDLIMIT))
 				updateRows, err := tx.Exec("update DHN_REQUEST as a join (select id from DHN_REQUEST where send_group is null limit ?) as b on a.id = b.id set send_group = ?", strconv.Itoa(config.Conf.SENDLIMIT), group_no)
 
 				if err != nil {
