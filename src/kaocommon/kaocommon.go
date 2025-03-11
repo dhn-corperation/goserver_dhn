@@ -25,7 +25,7 @@ func InsMsg(query string, insStrs []string, insValues []interface{}) ([]string, 
 	var errlog = config.Stdlog
 	stmt := fmt.Sprintf(query, s.Join(insStrs, ","))
 
-	tx, err := databasepool.DB.BeginTx(context.Background(), &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
+	tx, err := databasepool.DB.BeginTx(context.Background(), &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 
 	if err != nil{
 		config.Stdlog.Println("InsMsg init tx : ",err)

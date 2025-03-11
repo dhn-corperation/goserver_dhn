@@ -31,7 +31,7 @@ func FriendtalkResendProc(ctx context.Context) {
 			    config.Stdlog.Println("친구톡 9999 재발송 - process 종료 완료")
 			    return
 			default:
-				tx, err := databasepool.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
+				tx, err := databasepool.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 				if err != nil {
 					config.Stdlog.Println("친구톡 9999 재발송 트랜잭션 초기화 실패 : ", err)
 					continue
