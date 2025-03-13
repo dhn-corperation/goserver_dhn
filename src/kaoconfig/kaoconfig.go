@@ -75,8 +75,10 @@ func InitConfig() {
 	RL = int32(Conf.REALLIMIT)
 
 	go func(rl int32){
-		for{
-			time.Sleep(1 * time.Second)
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+
+		for range ticker.C {
 			atomic.StoreInt32(&RL, rl)
 		}
 	}(RL)
